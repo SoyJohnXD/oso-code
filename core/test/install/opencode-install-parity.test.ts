@@ -169,6 +169,15 @@ describe("the refusals the install reaches before it writes anything, by exit an
     assert.match(port.report, /malformed oso-code markers/);
   });
 
+  test("a host below the pinned OpenCode 2 floor refuses before writing, naming the version it found", () => {
+    const root = path.join(sandbox, "below-the-floor");
+    const home = seedFixtureHome(root);
+    const port = installedUnderItsOwnStateRoot({ ...portInput(home, root), host: { version: "1.18.22" } });
+    assert.equal(port.exitCode, 1);
+    assert.match(port.report, new RegExp(`upgrade opencode to ${SUPPORTED_OPENCODE_VERSION} or newer and re-run \\(found 1\\.18\\.22\\)`));
+    assert.deepEqual(treeUnder(path.join(home, ".local")), []);
+  });
+
   test("an install with no --yes refuses to write", () => {
     const root = path.join(sandbox, "no-yes");
     const home = seedFixtureHome(root);

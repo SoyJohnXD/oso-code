@@ -916,7 +916,7 @@ function errorMessageOf(cause) {
 
 // core/src/install/pins.ts
 var SUPPORTED_ENGRAM_VERSION = "1.20.0";
-var SUPPORTED_OPENCODE_VERSION = "1.18.22";
+var SUPPORTED_OPENCODE_VERSION = "2.2.6";
 var DOTTED_NUMERIC_VERSION = /^\d+(\.\d+)*$/;
 function meetsVersionFloor(found, floor) {
   if (found === void 0 || !DOTTED_NUMERIC_VERSION.test(found)) return false;
@@ -1809,37 +1809,37 @@ var AGENT_ROLES = [
   {
     id: "oso-applier",
     claude: { description: "Implements exactly one oso-code assignment \u2014 a plan slice, a debt cleanup, judge findings, or a diagnosis packaged as a ledger. Launched by the /plan, /quick and /debug orchestrators \u2014 not for direct use.", model: "sonnet", tools: ["Read", "Edit", "Write", "NotebookEdit", "Glob", "Grep", "Bash", "mcp__plugin_oso-code_context7__resolve-library-id", "mcp__plugin_oso-code_context7__query-docs"] },
-    opencode: { description: "Implements exactly one oso-code assignment: a plan slice, debt cleanup, accepted judge findings, or a diagnosis packaged as a ledger. Launched by the plan, quick, and debug orchestrators; not for direct use.", denies: ["task", "question", "todowrite", "webfetch", "websearch", "oso_wave", "oso_plan_approve", "oso_plan_cancel"], mcpServersTheClaudeTwinLists: ["context7"] }
+    opencode: { description: "Implements exactly one oso-code assignment: a plan slice, debt cleanup, accepted judge findings, or a diagnosis packaged as a ledger. Launched by the plan, quick, and debug orchestrators; not for direct use.", denies: ["subagent", "question", "todowrite", "webfetch", "websearch", "oso_wave", "oso_plan_approve", "oso_plan_cancel"], mcpServersTheClaudeTwinLists: ["context7"] }
   },
   {
     id: VERIFIER_AGENT,
     claude: { description: "Independently verifies one implemented slice \u2014 or one merged wave at its integration gate \u2014 against its criteria and the project's zero-warnings bar. Judges only \u2014 never edits files. Launched by the /plan and /debug orchestrators after each apply.", model: "sonnet", tools: ["Read", "Glob", "Grep", "Bash"] },
-    opencode: { description: "Independently verifies one implemented slice or one merged wave against its criteria and the project's zero-warning bar. Judges only and never edits source files.", denies: ["edit", "task", "question", "todowrite", "webfetch", "websearch", "oso_wave", "oso_plan_approve", "oso_plan_cancel"], mcpServersTheClaudeTwinLists: [] }
+    opencode: { description: "Independently verifies one implemented slice or one merged wave against its criteria and the project's zero-warning bar. Judges only and never edits source files.", denies: ["edit", "subagent", "question", "todowrite", "webfetch", "websearch", "oso_wave", "oso_plan_approve", "oso_plan_cancel"], mcpServersTheClaudeTwinLists: [] }
   },
   {
     id: "oso-integrator",
     claude: { description: "Merges one wave of green, committed slice branches into the main checkout, then tears down their worktrees and deletes those branches. Never resolves a conflict, never judges. Launched by the /plan orchestrator \u2014 not for direct use.", model: "sonnet", tools: ["Read", "Bash"] },
-    opencode: { description: "Merges one wave of green committed slice branches into the main checkout, then removes their worktrees and deletes their branches. Never resolves conflicts and never judges.", denies: ["edit", "task", "question", "todowrite", "webfetch", "websearch", "oso_wave", "oso_plan_approve", "oso_plan_cancel"], mcpServersTheClaudeTwinLists: [] }
+    opencode: { description: "Merges one wave of green committed slice branches into the main checkout, then removes their worktrees and deletes their branches. Never resolves conflicts and never judges.", denies: ["edit", "subagent", "question", "todowrite", "webfetch", "websearch", "oso_wave", "oso_plan_approve", "oso_plan_cancel"], mcpServersTheClaudeTwinLists: [] }
   },
   {
     id: "oso-debt-sweep",
     claude: null,
-    opencode: { description: "Fresh-context judge for the debt-sweep skill: judges code debt and frozen-ledger conformance separately and never edits.", denies: ["edit", "fallow_fix_apply", "task", "question", "todowrite", "webfetch", "websearch", "oso_wave", "oso_plan_approve", "oso_plan_cancel"], mcpServersTheClaudeTwinLists: ["fallow"] }
+    opencode: { description: "Fresh-context judge for the debt-sweep skill: judges code debt and frozen-ledger conformance separately and never edits.", denies: ["edit", "fallow_fix_apply", "subagent", "question", "todowrite", "webfetch", "websearch", "oso_wave", "oso_plan_approve", "oso_plan_cancel"], mcpServersTheClaudeTwinLists: ["fallow"] }
   },
   {
     id: "oso-doubt-pass",
     claude: null,
-    opencode: { description: "Fresh-context judge for the doubt-pass skill: attacks a candidate ledger using only intent, surface map, and bare decisions, and never edits.", denies: ["glob", "grep", "edit", "bash", "task", "question", "todowrite", "webfetch", "websearch", "oso_wave", "oso_plan_approve", "oso_plan_cancel"], mcpServersTheClaudeTwinLists: [] }
+    opencode: { description: "Fresh-context judge for the doubt-pass skill: attacks a candidate ledger using only intent, surface map, and bare decisions, and never edits.", denies: ["glob", "grep", "edit", "shell", "subagent", "question", "todowrite", "webfetch", "websearch", "oso_wave", "oso_plan_approve", "oso_plan_cancel"], mcpServersTheClaudeTwinLists: [] }
   },
   {
     id: "oso-security-reviewer",
     claude: null,
-    opencode: { description: "Fresh-context judge for the security-pass skill: reviews the supplied change surface as a judge and never edits, commits, or asks back.", denies: ["edit", "task", "question", "todowrite", "webfetch", "websearch", "oso_wave", "oso_plan_approve", "oso_plan_cancel"], mcpServersTheClaudeTwinLists: [] }
+    opencode: { description: "Fresh-context judge for the security-pass skill: reviews the supplied change surface as a judge and never edits, commits, or asks back.", denies: ["edit", "subagent", "question", "todowrite", "webfetch", "websearch", "oso_wave", "oso_plan_approve", "oso_plan_cancel"], mcpServersTheClaudeTwinLists: [] }
   },
   {
     id: "oso-triage",
     claude: null,
-    opencode: { description: "Fresh-context judge for the triage skill: establishes read-only attribution for one red plan-wave check and never diagnoses or fixes beyond it.", denies: ["edit", "task", "question", "todowrite", "webfetch", "websearch", "oso_wave", "oso_plan_approve", "oso_plan_cancel"], mcpServersTheClaudeTwinLists: [] }
+    opencode: { description: "Fresh-context judge for the triage skill: establishes read-only attribution for one red plan-wave check and never diagnoses or fixes beyond it.", denies: ["edit", "subagent", "question", "todowrite", "webfetch", "websearch", "oso_wave", "oso_plan_approve", "oso_plan_cancel"], mcpServersTheClaudeTwinLists: [] }
   }
 ];
 
@@ -1848,8 +1848,8 @@ var OPENCODE_CONFIG_SCHEMA_URL = "https://opencode.ai/config.json";
 var CONTEXT7_MCP_URL = "https://mcp.context7.com/mcp";
 var OWNED_SKILL_MODES = ["oso-plan", "oso-quick", "oso-debug", "oso-roadmap"];
 var OWNED_SKILL_VERDICT = "deny";
-var OWNED_TASK_PATTERN = "*";
-var OWNED_TASK_VERDICT = "allow";
+var OWNED_SUBAGENT_PATTERN = "*";
+var OWNED_SUBAGENT_VERDICT = "allow";
 var HARNESS_EXTERNAL_DIRECTORIES = ["~/.config/opencode/skill/**", "~/.local/share/opencode/worktree/**"];
 var HARNESS_EXTERNAL_DIRECTORY_VERDICT = "allow";
 var HARNESS_OWNED_TREES_NO_AGENT_MAY_EDIT = ["**/.config/opencode/skill/**", "**/.local/state/oso-code/**"];
@@ -1901,7 +1901,7 @@ var PLUGIN_KEY = "plugin";
 var PERMISSION_KEY = "permission";
 var MCP_KEY = "mcp";
 var SKILL_KEY = "skill";
-var TASK_KEY = "task";
+var SUBAGENT_KEY = "subagent";
 var EXTERNAL_DIRECTORY_KEY = "external_directory";
 var EDIT_KEY = "edit";
 var DOOM_LOOP_KEY = "doom_loop";
@@ -1973,14 +1973,14 @@ function mergeOpenCodeConfig(existing, fallowCommand, profileRoles = {}) {
   insertIfMissing(document, SCHEMA_KEY, OPENCODE_CONFIG_SCHEMA_URL);
   createPluginArrayIfAbsent(document);
   const permission = ownedContainer(document, PERMISSION_KEY);
-  const ownedPermissionContainers = [SKILL_KEY, TASK_KEY, EXTERNAL_DIRECTORY_KEY, EDIT_KEY];
+  const ownedPermissionContainers = [SKILL_KEY, SUBAGENT_KEY, EXTERNAL_DIRECTORY_KEY, EDIT_KEY];
   preservedKeys.push(...foreignKeysOf(permission, [PERMISSION_KEY], (name) => name in OWNED_PERMISSION_VALUES || ownedPermissionContainers.includes(name)));
   const skills = ownedContainer(permission, SKILL_KEY);
   preservedKeys.push(...foreignKeysOf(skills, [PERMISSION_KEY, SKILL_KEY], (name) => OWNED_SKILL_MODES.includes(name)));
   for (const mode of OWNED_SKILL_MODES) skills[mode] = OWNED_SKILL_VERDICT;
-  const delegations = ownedContainer(permission, TASK_KEY);
-  preservedKeys.push(...foreignKeysOf(delegations, [PERMISSION_KEY, TASK_KEY], (pattern) => pattern === OWNED_TASK_PATTERN));
-  delegations[OWNED_TASK_PATTERN] = OWNED_TASK_VERDICT;
+  const delegations = ownedContainer(permission, SUBAGENT_KEY);
+  preservedKeys.push(...foreignKeysOf(delegations, [PERMISSION_KEY, SUBAGENT_KEY], (pattern) => pattern === OWNED_SUBAGENT_PATTERN));
+  delegations[OWNED_SUBAGENT_PATTERN] = OWNED_SUBAGENT_VERDICT;
   const externalDirectories = ownedContainer(permission, EXTERNAL_DIRECTORY_KEY);
   const harnessDirectories = HARNESS_EXTERNAL_DIRECTORIES;
   preservedKeys.push(...foreignKeysOf(externalDirectories, [PERMISSION_KEY, EXTERNAL_DIRECTORY_KEY], (pattern) => harnessDirectories.includes(pattern)));
@@ -2185,7 +2185,7 @@ var CONFIG_BACKUP_LABEL = "config";
 var GLOBAL_MARKER_START = "<!-- oso-code:start -->";
 var GLOBAL_MARKER_END = "<!-- oso-code:end -->";
 var AWK_BLANK_LINE = /^[ \t]*$/;
-var REPAIRABLE_NESTED_PATHS = [["permission"], ["permission", "skill"], ["permission", "task"], ["mcp"]];
+var REPAIRABLE_NESTED_PATHS = [["permission"], ["permission", "skill"], ["permission", "subagent"], ["mcp"]];
 function opencodePathsFor(homeDirectory2, environment) {
   const configHome = path7.join(environment["XDG_CONFIG_HOME"] ?? path7.join(homeDirectory2, ".config"), "opencode");
   const stateRoot = path7.join(homeDirectory2, ".local", "state", "oso-code");
@@ -2456,12 +2456,12 @@ function ambiguousNote(versionLineShape, matches) {
 
 // core/src/install/opencode-host.ts
 var OPENCODE_BINARY_NAME = "opencode";
-var OPENCODE_VERSION_LINE_SHAPE = "a bare dotted version";
+var OPENCODE_VERSION_LINE_SHAPE = "a bare dotted version or `opencode v` and a dotted version";
 var PROBE_HOME_PREFIX = "oso-opencode-probe.";
 var PROBE_TIMEOUT_MILLISECONDS = 1e4;
 var ANSI_SELECT_GRAPHIC_RENDITION = /\u001b\[[0-9;]*m/g;
 var POSIX_SPACE_CLASS = /[ \t\n\v\f\r]/g;
-var OPENCODE_VERSION_LINE = /^(\d+(?:\.\d+)*)$/;
+var OPENCODE_VERSION_LINE = /^(?:opencodev)?(\d+(?:\.\d+)*)$/;
 function openCodeHostProbes(environment) {
   const binaryPath = firstExecutableOnPath(environment, OPENCODE_BINARY_NAME);
   if (binaryPath === void 0) return { version: void 0 };
@@ -3418,9 +3418,26 @@ import { spawnSync as spawnSync6 } from "node:child_process";
 import { chmodSync as chmodSync3, mkdirSync as mkdirSync8, mkdtempSync as mkdtempSync5, readdirSync as readdirSync6, readFileSync as readFileSync12, rmSync as rmSync9, writeFileSync as writeFileSync7 } from "node:fs";
 import { tmpdir as tmpdir4 } from "node:os";
 import path14 from "node:path";
+
+// core/src/install/opencode-load-proof.ts
+var HOST_PLUGIN_LOAD_ERROR = "failed to load plugin";
+var HOST_PLUGIN_LOADING_MESSAGE = 'msg="loading plugin"';
+var HOST_LOAD_PROBE_ARGS = ["debug", "agents", "--standalone", "--print-logs"];
+function failedLoadLinesOf(hostLog) {
+  return hostLog.split("\n").filter((line) => line.includes(HOST_PLUGIN_LOAD_ERROR));
+}
+function pluginLoadProofOf(hostLog, pluginFileName) {
+  return {
+    loadedLines: hostLog.split("\n").filter((line) => line.includes(HOST_PLUGIN_LOADING_MESSAGE) && line.includes(pluginFileName)),
+    failedLines: failedLoadLinesOf(hostLog)
+  };
+}
+
+// core/src/install/verify-opencode.ts
 var OPENCODE_NOT_ON_PATH = "opencode-not-on-path";
 var VERSION_ROW_SKIP = "OpenCode CLI version \u2014 opencode is not on PATH, so the installed pin could not be probed";
 var LOCAL_CHECKS_SECTION = "local checks:";
+var PLUGIN_LOAD_ROW_SKIP = "OpenCode plugin loads on the host \u2014 opencode is not on PATH, so the installed plugin could not be loaded";
 var FIXTURE_ROWS_SKIP = "the fixture-based artifact checks \u2014 the isolated install could not complete";
 var REACHABLE_BEYOND_THE_TWINS_LIST = "reachable beyond the twin's list:";
 var OPERATOR_CONFIG_PROBE = {
@@ -3456,7 +3473,7 @@ var FIXTURE_ENGRAM_SHIM = [
   `  "setup --help") printf 'usage: engram setup [<agent>] (claude-code, opencode, ...)\\n'; exit 0 ;;`,
   '  "setup opencode")',
   '    mkdir -p "$HOME/.config/opencode/plugins"',
-  `    printf 'fixture engram plugin\\n' > "$HOME/.config/opencode/plugins/engram.ts"`,
+  `    printf 'export default { id: "fixture-engram", setup: async () => () => {} }\\n' > "$HOME/.config/opencode/plugins/engram.ts"`,
   "    exit 0 ;;",
   "  *) exit 64 ;;",
   "esac",
@@ -3469,6 +3486,8 @@ var FRONT_MATTER_DELIMITER = "---";
 var PERMISSION_BLOCK_HEADING = "permission:";
 var SHARED_SKILL_DIRECTORY = "_shared";
 var PERMISSION_VERDICT_LINE = /^ {2}(\S+): (\S+)$/;
+var PLUGIN_BUNDLE_FILE = "oso-code.js";
+var PLUGIN_LOAD_PROBE_TIMEOUT_MILLISECONDS = 3e4;
 var FIXTURE_PREFIX = "oso-opencode-verify.";
 var TEMPORARY_PARENT_UNAVAILABLE = "temporary-parent-unavailable";
 var DECOY_CONFIG_TEXT = '{"theme":"decoy"}';
@@ -3520,6 +3539,7 @@ function checkInstalledTree(report2, input, tree) {
   noteServersBeyondTheOwnedSet(report2, configFile, tree.configHome);
   report2.check("mode commands installed and routed", "exact", openCodeCommandStatus(input.repositoryRoot, tree.configHome));
   report2.check("plugin entry, modules and routes installed", "exact", openCodePluginStatus(input.repositoryRoot, tree.configHome));
+  checkInstalledPluginLoads(report2, input, tree);
   report2.check("Engram plugin file installed", "present", openCodeEngramStatus(tree.configHome));
   report2.check("global guidance installed", "exact", openCodeGlobalStatus(globalFile, readFileSync12(sources.global, "utf8")));
   report2.check("operator global prose survives an install", "preserved", openCodeOperatorGlobalStatus(globalFile, operatorGlobalSeed()));
@@ -3827,9 +3847,29 @@ function openCodeCommandStatus(repositoryRoot2, configHome) {
 }
 function openCodePluginStatus(repositoryRoot2, configHome) {
   const sources = openCodePayloadSources(repositoryRoot2);
-  if (!filesHoldTheSameBytes(sources.pluginBundle, path14.join(configHome, "plugin", "oso-code.js"))) return "entry-divergent";
+  if (!filesHoldTheSameBytes(sources.pluginBundle, path14.join(configHome, "plugin", PLUGIN_BUNDLE_FILE))) return "entry-divergent";
   const unbundled = directoryEntryNames2(path14.join(configHome, "plugin")).filter((name) => name.endsWith(".ts") || name === "oso");
   return unbundled.length === 0 ? "exact" : `unbundled-sources:${unbundled.length}`;
+}
+function checkInstalledPluginLoads(report2, input, tree) {
+  const binary = firstExecutableOnPath(input.environment, OPENCODE_BINARY_NAME);
+  if (binary === void 0) {
+    report2.skip(PLUGIN_LOAD_ROW_SKIP);
+    return;
+  }
+  report2.check("installed plugin loads on the host", "loaded", openCodePluginLoadStatus(binary, fixtureEnvironmentFor(input.environment, tree.home, tree.root), tree.root));
+}
+function openCodePluginLoadStatus(binary, environment, projectDirectory) {
+  const run = spawnSync6(binary, [...HOST_LOAD_PROBE_ARGS], {
+    cwd: projectDirectory,
+    env: { ...environment, PWD: projectDirectory },
+    encoding: "utf8",
+    timeout: PLUGIN_LOAD_PROBE_TIMEOUT_MILLISECONDS
+  });
+  if (run.error !== void 0 || run.status !== 0) return `probe-failed: ${run.error?.message ?? run.signal ?? `exit ${run.status}`}`;
+  const proof = pluginLoadProofOf(`${run.stdout}${run.stderr}`, PLUGIN_BUNDLE_FILE);
+  if (proof.failedLines.length > 0) return namedList("failed", proof.failedLines);
+  return proof.loadedLines.length === 1 ? "loaded" : `loading-lines:${proof.loadedLines.length}`;
 }
 function openCodeEngramStatus(configHome) {
   return isReadableRegularFile(path14.join(configHome, "plugins", "engram.ts")) ? "present" : "missing";

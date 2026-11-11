@@ -1,0 +1,59 @@
+import assert from "node:assert/strict";
+import { after, before, describe, test } from "node:test";
+import { CERTIFY_GUARD } from "./support/certify-guard.ts";
+import { CONTRACT_BAR_BOUND_SECONDS } from "./support/drive.ts";
+import {
+  ADAPTER_BUNDLE_FILE,
+  createSpikeFixture,
+  disposeSpikeFixture,
+  driveScenario,
+  installAdapterBundle,
+  resolveV2Lane,
+  type ScenarioOutcome,
+  type SpikeFixture,
+} from "./support/host-spike.ts";
+import { resolvedProbeOrThrow, type ResolvedProbe } from "./support/opencode-binary.ts";
+import { pluginLoadProofOf } from "../../src/install/opencode-load-proof.ts";
+import { runLoadProbe } from "./support/plugin-load-proof.ts";
+
+const PUBLISHED_VARIABLES = ["OSO_STATE_BIN", "OSO_AGENT"] as const;
+
+const { probe, laneCause, laneNotRun } = resolveV2Lane();
+
+describe("the built OpenCode adapter bundle installed into an isolated OpenCode 2 host", () => {
+  let fixture: SpikeFixture | undefined;
+  let resolved: ResolvedProbe | undefined;
+  let shellOutcome: ScenarioOutcome | undefined;
+
+  before(async () => {
+    if (probe === undefined || laneCause !== undefined) return;
+    resolved = resolvedProbeOrThrow(probe);
+    fixture = await createSpikeFixture();
+    installAdapterBundle(fixture);
+    for (const name of PUBLISHED_VARIABLES) delete fixture.environment[name];
+    const command = PUBLISHED_VARIABLES.map((name) => `echo ${name}=$${name}`).join("; ");
+    shellOutcome = await driveScenario(resolved, fixture, "bundle-shell", "shell", { command, description: "probe" });
+  });
+
+  after(async () => {
+    if (fixture !== undefined) await disposeSpikeFixture(fixture);
+  });
+
+  test("the bundle loads: positive loading evidence for oso-code.js and zero failed-to-load lines", CERTIFY_GUARD, (t) => {
+    if (laneNotRun(t) || fixture === undefined || resolved === undefined) return;
+    const run = runLoadProbe(resolved.binary, fixture.environment, fixture.project, CONTRACT_BAR_BOUND_SECONDS);
+    assert.equal(run.status, 0, run.stderr);
+    const proof = pluginLoadProofOf(run.stderr, ADAPTER_BUNDLE_FILE);
+    assert.equal(proof.loadedLines.length, 1, run.stderr);
+    assert.deepEqual(proof.failedLines, []);
+  });
+
+  test("a shell command the host spawns carries the identity variables the bundle's create.before hook publishes", CERTIFY_GUARD, (t) => {
+    if (laneNotRun(t) || shellOutcome === undefined) return;
+    const [toolResult] = shellOutcome.toolResults;
+    assert.ok(toolResult !== undefined, shellOutcome.run.stderr);
+    for (const name of PUBLISHED_VARIABLES) {
+      assert.match(toolResult, new RegExp(`^${name}=.+$`, "m"));
+    }
+  });
+});

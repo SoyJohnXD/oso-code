@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { after, test } from "node:test";
 import {
+  CERTIFY_SUITE_HOSTS,
   certifyHostTotals,
   certifySummaryFor,
   hostDroveZeroRows,
@@ -95,10 +96,38 @@ test("a TAP directory that exists but holds none of the suites' files also names
 
 test("a suite's TAP that crashed before its row-count line still warns, rather than a zero floor hiding it (IO seam)", () => {
   const directory = mkdtempSync(path.join(sandbox, "red-floor-"));
-  writeFileSync(path.join(directory, "opencode-contract-bar.tap"), "TAP version 13\nnot ok 1 - the harness crashed before any row ran\n1..1\n");
+  writeFileSync(path.join(directory, "opencode-v2-tools.tap"), "TAP version 13\nnot ok 1 - the harness crashed before any row ran\n1..1\n");
   const reports = suiteReportsFrom(directory);
   assert.equal(reports.length, 1);
-  assert.equal(reports.find((report) => report.suite === "opencode-contract-bar")?.registered, 0);
+  assert.equal(reports.find((report) => report.suite === "opencode-v2-tools")?.registered, 0);
   const rendered = certifySummaryFor(directory);
   assert.match(rendered, /::warning::opencode drove zero certify rows this run/);
+});
+
+test("a node TAP with no row-count floor registers one row per leaf test and none for the suites around them", () => {
+  const nodeTap = [
+    "TAP version 13",
+    "    ok 1 - row one",
+    "      type: 'test'",
+    "    ok 2 - row two # SKIP not-run: reason two",
+    "      type: 'test'",
+    "ok 1 - the suite around them",
+    "  type: 'suite'",
+    "",
+  ].join("\n");
+  const parsed = parseCertifySuiteTap(nodeTap);
+  assert.equal(parsed.registered, 2);
+  assert.deepEqual(parsed.notRun, [{ row: "row two", reason: "not-run: reason two" }]);
+});
+
+test("the nightly's certify suites are the OpenCode 2 suites", () => {
+  assert.deepEqual(Object.keys(CERTIFY_SUITE_HOSTS), [
+    "opencode-v2-host-spike",
+    "opencode-v2-plugin-load",
+    "opencode-v2-gates-engage",
+    "opencode-v2-tools",
+    "opencode-v2-lifecycle",
+    "opencode-v2-agent-permissions",
+    "opencode-v2-plan-delta",
+  ]);
 });

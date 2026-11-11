@@ -4,12 +4,9 @@ import { openCodeRoutes, type OpenCodeRoute } from "../../src/routes/render.ts";
 import { provedSomething } from "../support/proved.ts";
 
 const UNKNOWN_TOOL_ALLOWLIST: readonly string[] = [
-  "bash",
-  "apply_patch",
-  "task",
-  "list_mcp_resources",
-  "list_mcp_resource_templates",
-  "read_mcp_resource",
+  "shell",
+  "patch",
+  "subagent",
   "engram_mem_search",
   "engram_mem_get_observation",
   "engram_mem_save",
@@ -35,27 +32,25 @@ const UNKNOWN_TOOL_ALLOWLIST: readonly string[] = [
   "webfetch",
   "websearch",
   "question",
-  "lsp",
-  "plan_exit",
   "oso_plan_approve",
   "oso_plan_cancel",
   "oso_wave",
 ];
 
 const PINNED_OPENCODE_ROUTES: readonly OpenCodeRoute[] = [
-  { hook: "tool.execute.before", gate: "commit", matcher: "^(?:bash)$", allow: [] },
+  { hook: "execute.before", gate: "commit", matcher: "^(?:shell)$", allow: [] },
   {
-    hook: "tool.execute.before",
+    hook: "execute.before",
     gate: "edits",
-    matcher: "^(?:edit|multiedit|write|fallow_fix_apply|apply_patch|patch|.*fix_apply)$",
+    matcher: "^(?:edit|write|fallow_fix_apply|patch|.*fix_apply)$",
     allow: [],
   },
-  { hook: "tool.execute.before", gate: "unknown", matcher: "^(?:.*)$", allow: UNKNOWN_TOOL_ALLOWLIST },
-  { hook: "experimental.chat.system.transform", gate: "stale", matcher: "", allow: [] },
-  { hook: "experimental.chat.system.transform", gate: "version", matcher: "", allow: [] },
-  { hook: "dispose", gate: "teardown", matcher: "", allow: [] },
-  { hook: "tool.execute.before", gate: "proddeploy", matcher: "^(?:bash|.*deploy.*)$", allow: [] },
-  { hook: "event", gate: "reanchor", matcher: "", allow: [] },
+  { hook: "execute.before", gate: "unknown", matcher: "^(?:.*)$", allow: UNKNOWN_TOOL_ALLOWLIST },
+  { hook: "context", gate: "stale", matcher: "", allow: [] },
+  { hook: "context", gate: "version", matcher: "", allow: [] },
+  { hook: "cleanup", gate: "teardown", matcher: "", allow: [] },
+  { hook: "execute.before", gate: "proddeploy", matcher: "^(?:shell|.*deploy.*)$", allow: [] },
+  { hook: "compaction", gate: "reanchor", matcher: "", allow: [] },
 ];
 
 provedSomething(

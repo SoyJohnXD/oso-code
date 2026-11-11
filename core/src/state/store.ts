@@ -220,12 +220,17 @@ export function jsonObjectOf(text: string): Record<string, unknown> | undefined 
   }
 }
 
-export function writeStatePairs(stateFile: string, pairs: readonly string[], ownerSession: string): string {
+export function writeStatePairs(
+  stateFile: string,
+  pairs: readonly string[],
+  ownerSession: string,
+  removedKeys: readonly string[] = [],
+): string {
   const directory = path.dirname(stateFile);
   const read = readStateFile(stateFile);
   if (read.kind === "unreadable") throw new StateFileUnreadableError(stateFile, read.cause);
   const existing = read.kind === "ok" ? read.content : "";
-  let lines = parseStateLines(existing);
+  let lines = parseStateLines(existing).filter((line) => !removedKeys.includes(line.key));
   for (const pair of [...pairs, `session=${ownerSession}`]) {
     const [key, value] = splitPair(pair);
     lines = lines.filter((line) => line.key !== key);

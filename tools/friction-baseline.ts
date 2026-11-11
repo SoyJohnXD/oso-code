@@ -500,6 +500,9 @@ function classifyOpenCodeParts(partRows: SqlRow[], { parents, records, roles }: 
   return skippedLines;
 }
 
+const OPENCODE_DELEGATION_TOOLS: readonly string[] = ["subagent", "task"];
+const OPENCODE_SHELL_TOOLS: readonly string[] = ["shell", "bash"];
+
 function countOpenCodeMainPart(
   record: SessionRecord,
   part: EventRecord,
@@ -512,8 +515,9 @@ function countOpenCodeMainPart(
     record.mode ??= (SKILL_MODE.exec(part["text"])?.[1] as Mode | undefined) ?? null;
   }
   if (part["type"] !== "tool") return;
-  if (part["tool"] === "task") record.agentLaunches += 1;
-  if (part["tool"] === "bash" && OSO_STATE_INVOCATION.test(commandOf(state))) record.osoStateCalls += 1;
+  if (typeof part["tool"] !== "string") return;
+  if (OPENCODE_DELEGATION_TOOLS.includes(part["tool"])) record.agentLaunches += 1;
+  if (OPENCODE_SHELL_TOOLS.includes(part["tool"]) && OSO_STATE_INVOCATION.test(commandOf(state))) record.osoStateCalls += 1;
 }
 
 function rootSessionOf(sessionId: string, parents: Map<string, string | null>): string {

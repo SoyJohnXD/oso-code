@@ -3,14 +3,13 @@ import { existsSync, readdirSync, rmSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { osoCode } from "../oso-code.ts";
+import entry from "../oso-code.ts";
+import { fakeHostContext, type FakeHostContext } from "../../test-support/host-context.ts";
 import { seedRailFixture, underRailFixtureHome, type RailFixture } from "../../test-support/rail-fixture.ts";
 import { armStateUnder } from "../../test-support/state-fixture.ts";
 
 const HOOKS_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "../../../plugin/hooks");
 process.env.OSO_HOOKS_DIR = HOOKS_DIR;
-
-type LooseHooks = Record<string, (input?: unknown, output?: unknown) => unknown>;
 
 function makeFixture(): RailFixture {
   return seedRailFixture("oso-lifecycle-rail");
@@ -28,28 +27,37 @@ function stateFilesOf(fixture: RailFixture): string[] {
   return readdirSync(stateDir).filter((entry) => entry.endsWith(".state"));
 }
 
-async function railFor(fixture: RailFixture): Promise<LooseHooks> {
-  return (await osoCode({ directory: fixture.repo })) as unknown as LooseHooks;
+interface Rail {
+  host: FakeHostContext;
+  cleanup: () => void;
+}
+
+async function railFor(fixture: RailFixture): Promise<Rail> {
+  const host = fakeHostContext({ directory: fixture.repo, defaultSessionDirectory: fixture.repo });
+  const cleanup = await entry.setup(host.context);
+  return { host, cleanup };
+}
+
+async function idleOn(fixture: RailFixture, rail: Rail, sessionID: string): Promise<void> {
+  await underRailFixtureHome(fixture, () => rail.host.hook("session", "experimental.idle")({ sessionID, background: [] }));
 }
 
 async function systemPromptAfter(
   fixture: RailFixture,
-  hooks: LooseHooks,
+  rail: Rail,
   sessionID: string,
 ): Promise<string[]> {
-  const output = { system: ["you are a harness"] };
-  await underRailFixtureHome(fixture, async () => {
-    await hooks["experimental.chat.system.transform"]!({ sessionID }, output);
-  });
-  return output.system;
+  const output = { sessionID, system: [{ type: "text", text: "you are a harness" }] };
+  await underRailFixtureHome(fixture, () => rail.host.hook("session", "context")(output));
+  return output.system.map((part) => part.text);
 }
 
 test("the stale gate's own words reach the model through the system prompt", async () => {
   const fixture = makeFixture();
   try {
     armState(fixture, "a-session-that-is-not-this-one", ["mode=plan"]);
-    const hooks = await railFor(fixture);
-    const system = await systemPromptAfter(fixture, hooks, "ses-stale-fires");
+    const rail = await railFor(fixture);
+    const system = await systemPromptAfter(fixture, rail, "ses-stale-fires");
     assert.equal(system.length, 2, "the gate's advisory is appended to the prompt the host handed over");
     assert.match(system[1]!, /was left by another session/);
     assert.match(system[1]!, /oso-code/);
@@ -62,8 +70,8 @@ test("the stale gate stays silent for state this host's own identity armed", asy
   const fixture = makeFixture();
   try {
     armState(fixture, fixture.owner, ["mode=plan"]);
-    const hooks = await railFor(fixture);
-    const system = await systemPromptAfter(fixture, hooks, "ses-stale-silent");
+    const rail = await railFor(fixture);
+    const system = await systemPromptAfter(fixture, rail, "ses-stale-silent");
     assert.deepEqual(system, ["you are a harness"]);
   } finally {
     rmSync(fixture.base, { recursive: true, force: true });
@@ -74,38 +82,14 @@ test("the advisory rides every prompt of the turn and stops when the session goe
   const fixture = makeFixture();
   try {
     armState(fixture, "a-session-that-is-not-this-one", ["mode=plan"]);
-    const hooks = await railFor(fixture);
-    const discarded = await systemPromptAfter(fixture, hooks, "ses-stale-turn");
+    const rail = await railFor(fixture);
+    const discarded = await systemPromptAfter(fixture, rail, "ses-stale-turn");
     assert.equal(discarded.length, 2, "the prompt the host discards carries the advisory");
-    const sent = await systemPromptAfter(fixture, hooks, "ses-stale-turn");
+    const sent = await systemPromptAfter(fixture, rail, "ses-stale-turn");
     assert.equal(sent.length, 2, "so does the prompt the host actually sends");
-    await underRailFixtureHome(fixture, async () => {
-      await hooks.event!({ event: { type: "session.idle", properties: { sessionID: "ses-stale-turn" } } });
-    });
-    const afterIdle = await systemPromptAfter(fixture, hooks, "ses-stale-turn");
+    await idleOn(fixture, rail, "ses-stale-turn");
+    const afterIdle = await systemPromptAfter(fixture, rail, "ses-stale-turn");
     assert.deepEqual(afterIdle, ["you are a harness"], "the turn it was queued for is over");
-  } finally {
-    rmSync(fixture.base, { recursive: true, force: true });
-  }
-});
-
-test("a compaction on the bus puts the re-anchor gate's text on the next system prompt", async () => {
-  const fixture = makeFixture();
-  try {
-    armState(fixture, fixture.owner, ["mode=plan", "active_slice=s1"]);
-    const hooks = await railFor(fixture);
-    const beforeCompaction = await systemPromptAfter(fixture, hooks, "ses-compacted");
-    assert.deepEqual(beforeCompaction, ["you are a harness"]);
-    await underRailFixtureHome(fixture, async () => {
-      await hooks.event!({ event: { type: "session.compacted", properties: { sessionID: "ses-compacted" } } });
-    });
-    const afterCompaction = await systemPromptAfter(fixture, hooks, "ses-compacted");
-    assert.equal(afterCompaction.length, 2);
-    assert.match(afterCompaction[1]!, /compacted while a run was in flight/);
-    await underRailFixtureHome(fixture, async () => {
-      await hooks.event!({ event: { type: "session.idle", properties: { sessionID: "ses-compacted" } } });
-    });
-    assert.deepEqual(await systemPromptAfter(fixture, hooks, "ses-compacted"), ["you are a harness"]);
   } finally {
     rmSync(fixture.base, { recursive: true, force: true });
   }
@@ -113,28 +97,20 @@ test("a compaction on the bus puts the re-anchor gate's text on the next system 
 
 async function compactionContextAfter(
   fixture: RailFixture,
-  hooks: LooseHooks,
+  rail: Rail,
   sessionID: string,
 ): Promise<string[]> {
-  const output = { context: [] as string[] };
-  await underRailFixtureHome(fixture, async () => {
-    await hooks["experimental.session.compacting"]!({ sessionID }, output);
-  });
-  return output.context;
+  const output = { sessionID, system: [] as Array<{ type: string; text: string }> };
+  await underRailFixtureHome(fixture, () => rail.host.hook("session", "compaction")(output));
+  return output.system.map((part) => part.text);
 }
 
-async function compactedOnTheBus(fixture: RailFixture, hooks: LooseHooks, sessionID: string): Promise<void> {
-  await underRailFixtureHome(fixture, async () => {
-    await hooks.event!({ event: { type: "session.compacted", properties: { sessionID } } });
-  });
-}
-
-test("the compacting hook hands the re-anchor gate's text to the compaction itself", async () => {
+test("the compaction hook hands the re-anchor gate's text to the compaction itself", async () => {
   const fixture = makeFixture();
   try {
     armState(fixture, fixture.owner, ["mode=plan", "active_slice=s1"]);
-    const hooks = await railFor(fixture);
-    const context = await compactionContextAfter(fixture, hooks, "ses-compacting");
+    const rail = await railFor(fixture);
+    const context = await compactionContextAfter(fixture, rail, "ses-compacting");
     assert.equal(context.length, 1);
     assert.match(context[0]!, /compacted while a run was in flight/);
   } finally {
@@ -142,12 +118,12 @@ test("the compacting hook hands the re-anchor gate's text to the compaction itse
   }
 });
 
-test("the compacting hook re-anchors an unattended run in flight", async () => {
+test("the compaction hook re-anchors an unattended run in flight", async () => {
   const fixture = makeFixture();
   try {
     armState(fixture, fixture.owner, ["mode=plan", "auto=running"]);
-    const hooks = await railFor(fixture);
-    const context = await compactionContextAfter(fixture, hooks, "ses-compacting-auto");
+    const rail = await railFor(fixture);
+    const context = await compactionContextAfter(fixture, rail, "ses-compacting-auto");
     assert.equal(context.length, 1);
     assert.match(context[0]!, /This run is unattended and still in flight/);
   } finally {
@@ -155,70 +131,38 @@ test("the compacting hook re-anchors an unattended run in flight", async () => {
   }
 });
 
-test("a compaction the compacting hook already re-anchored queues no second system advice", async () => {
-  const fixture = makeFixture();
-  try {
-    armState(fixture, fixture.owner, ["mode=plan", "active_slice=s1"]);
-    const hooks = await railFor(fixture);
-    await compactionContextAfter(fixture, hooks, "ses-anchored");
-    await compactedOnTheBus(fixture, hooks, "ses-anchored");
-    assert.deepEqual(await systemPromptAfter(fixture, hooks, "ses-anchored"), ["you are a harness"]);
-  } finally {
-    rmSync(fixture.base, { recursive: true, force: true });
-  }
-});
-
-test("the compacting hook's flag covers one compaction, so the next one without it falls back again", async () => {
-  const fixture = makeFixture();
-  try {
-    armState(fixture, fixture.owner, ["mode=plan", "active_slice=s1"]);
-    const hooks = await railFor(fixture);
-    await compactionContextAfter(fixture, hooks, "ses-anchored-once");
-    await compactedOnTheBus(fixture, hooks, "ses-anchored-once");
-    await compactedOnTheBus(fixture, hooks, "ses-anchored-once");
-    const system = await systemPromptAfter(fixture, hooks, "ses-anchored-once");
-    assert.equal(system.length, 2);
-    assert.match(system[1]!, /compacted while a run was in flight/);
-  } finally {
-    rmSync(fixture.base, { recursive: true, force: true });
-  }
-});
-
-test("with no run in flight the compacting hook adds nothing to the compaction", async () => {
+test("with no run in flight the compaction hook adds nothing to the compaction", async () => {
   const fixture = makeFixture();
   try {
     armState(fixture, fixture.owner, ["mode=plan"]);
-    const hooks = await railFor(fixture);
-    assert.deepEqual(await compactionContextAfter(fixture, hooks, "ses-idle-compacting"), []);
+    const rail = await railFor(fixture);
+    assert.deepEqual(await compactionContextAfter(fixture, rail, "ses-idle-compacting"), []);
   } finally {
     rmSync(fixture.base, { recursive: true, force: true });
   }
 });
 
-test("dispose runs the teardown gate and drops the state the scope's sessions armed", async () => {
+test("the Cleanup runs the teardown gate and drops the state the scope's sessions armed", async () => {
   const fixture = makeFixture();
   try {
     armState(fixture, fixture.owner, ["mode=plan"]);
     assert.equal(stateFilesOf(fixture).length, 1, "the fixture armed a state file to tear down");
-    const hooks = await railFor(fixture);
-    await underRailFixtureHome(fixture, async () => {
-      await hooks.event!({ event: { type: "session.idle", properties: { sessionID: "ses-teardown" } } });
-      await hooks.dispose!();
-    });
+    const rail = await railFor(fixture);
+    rail.host.emit({ type: "session.created", data: { sessionID: "ses-teardown" } });
+    await new Promise((resolve) => setImmediate(resolve));
+    await underRailFixtureHome(fixture, async () => rail.cleanup());
     assert.deepEqual(stateFilesOf(fixture), [], "the teardown gate removed the state file at scope close");
   } finally {
     rmSync(fixture.base, { recursive: true, force: true });
   }
 });
 
-test("dispose with no session on the bus leaves the repository's state alone", async () => {
+test("the Cleanup with no session on the bus leaves the repository's state alone", async () => {
   const fixture = makeFixture();
   try {
     armState(fixture, fixture.owner, ["mode=plan"]);
-    const hooks = await railFor(fixture);
-    await underRailFixtureHome(fixture, async () => {
-      await hooks.dispose!();
-    });
+    const rail = await railFor(fixture);
+    await underRailFixtureHome(fixture, async () => rail.cleanup());
     assert.equal(stateFilesOf(fixture).length, 1);
   } finally {
     rmSync(fixture.base, { recursive: true, force: true });

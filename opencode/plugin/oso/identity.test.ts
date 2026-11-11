@@ -74,14 +74,17 @@ test("a child worktree resolves to its root's session id", () => {
   }
 });
 
-test("a directory outside any repository has no identity", () => {
+test("a directory outside any repository takes its identity from the directory itself", () => {
   const outside = mkdtempSync(join(tmpdir(), "oso-identity-none-"));
+  const fixture = makeRepo();
   try {
     assert.equal(roleOf(outside), "none");
-    assert.equal(deriveRootId(outside), "");
-    const vars = publishIdentity(outside);
-    assert.equal(vars.OSO_AGENT, "");
+    assert.notEqual(deriveRootId(outside), "");
+    assert.equal(deriveRootId(outside), deriveRootId(outside));
+    assert.notEqual(deriveRootId(outside), fixture.rootId);
+    assert.equal(publishIdentity(outside).OSO_AGENT, deriveRootId(outside));
   } finally {
+    rmSync(fixture.base, { recursive: true, force: true });
     rmSync(outside, { recursive: true, force: true });
   }
 });
@@ -99,14 +102,14 @@ test("publishIdentity publishes OSO_AGENT as the root session id for both root a
   }
 });
 
-test("a stray .git directory with no HEAD resolves to no identity", () => {
+test("a stray .git directory with no HEAD resolves to the directory identity", () => {
   const outside = mkdtempSync(join(tmpdir(), "oso-identity-stray-git-"));
   try {
     mkdirSync(join(outside, ".git", "info"), { recursive: true });
     writeFileSync(join(outside, ".git", "info", "exclude"), "*.log\n");
     assert.equal(roleOf(outside), "none");
-    assert.equal(deriveRootId(outside), "");
-    assert.equal(publishIdentity(outside).OSO_AGENT, "");
+    assert.notEqual(deriveRootId(outside), "");
+    assert.equal(publishIdentity(outside).OSO_AGENT, deriveRootId(outside));
   } finally {
     rmSync(outside, { recursive: true, force: true });
   }

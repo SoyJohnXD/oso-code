@@ -54,22 +54,17 @@ function withEnv<T>(key: string, value: string | undefined, run: () => T): T {
   }
 }
 
-test("sink precedence is state, then log, then toast", () => {
-  assert.deepEqual(TRACE_SINK_ORDER, ["state", "log", "toast"]);
+test("sink precedence is state, then log", () => {
+  assert.deepEqual(TRACE_SINK_ORDER, ["state", "log"]);
 });
 
 test("every sink is attempted in that order and reported back, the state one writing the run's own event log", () => {
   const dir = fixtureDir();
-  const toastCalls: unknown[] = [];
-  const client = { tui: { showToast: (input: unknown) => { toastCalls.push(input); } } };
   const results = withEnv("OSO_STATE_DIR", stateRootTheSinkCanWrite(dir), () =>
-    withConsoleError(() =>
-      recordTrace({ origin: "test-origin", detail: "test-detail", sessionID: "ses-1", client }),
-    ),
+    withConsoleError(() => recordTrace({ origin: "test-origin", detail: "test-detail", sessionID: "ses-1" })),
   );
-  assert.deepEqual(results.map((r) => r.sink), ["state", "log", "toast"]);
+  assert.deepEqual(results.map((r) => r.sink), ["state", "log"]);
   assert.equal(results.every((r) => r.ok), true);
-  assert.equal(toastCalls.length, 1);
   assert.match(readFileSync(eventsLogUnder(dir), "utf8"), /"event":"test-origin"[\s\S]*"session":"ses-1"/);
   rmSync(dir, { recursive: true, force: true });
 });
@@ -97,30 +92,4 @@ test("a state sink that cannot write is reported once on the log line, never ret
   assert.equal(lines.length, 1);
   assert.match(lines[0]!, /state sink also failed/);
   rmSync(dir, { recursive: true, force: true });
-});
-
-test("the toast variant follows severity: enforcement is error, advisory is warning", () => {
-  const toastCalls: { body: { variant: string } }[] = [];
-  const client = { tui: { showToast: (input: { body: { variant: string } }) => { toastCalls.push(input); } } };
-  withConsoleError(() =>
-    recordTrace({ origin: "install-check", detail: "not installed", severity: "enforcement", client }),
-  );
-  withConsoleError(() =>
-    recordTrace({ origin: "lifecycle.sweep", detail: "unreadable repo", severity: "advisory", client }),
-  );
-  assert.equal(toastCalls[0]?.body.variant, "error");
-  assert.equal(toastCalls[1]?.body.variant, "warning");
-});
-
-test("a client with no toast surface leaves the toast sink unavailable without throwing", () => {
-  const results = withConsoleError(() => recordTrace({ origin: "shell.env", detail: "no client here" }));
-  const toastResult = results.find((r) => r.sink === "toast");
-  assert.equal(toastResult?.ok, false);
-});
-
-test("a throwing toast function never escapes recordTrace", () => {
-  const client = { tui: { showToast: () => { throw new Error("toast exploded"); } } };
-  const results = withConsoleError(() => recordTrace({ origin: "chat.message", detail: "boom", client }));
-  const toastResult = results.find((r) => r.sink === "toast");
-  assert.equal(toastResult?.ok, false);
 });

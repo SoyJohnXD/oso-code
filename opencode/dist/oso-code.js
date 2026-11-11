@@ -139,102 +139,98 @@ var GATE_ROWS = [
     event: "PreToolUse",
     script: "block-commit-until-green.sh",
     wiring: { claude: "wired", opencode: "wired" },
-    mechanism: { claude: "subprocess", opencode: "tool.execute.before" }
+    mechanism: { claude: "subprocess", opencode: "execute.before" }
   },
   {
     gate: "edits",
     event: "PreToolUse",
     script: "block-edits-without-slice.sh",
     wiring: { claude: "wired", opencode: "wired" },
-    mechanism: { claude: "subprocess", opencode: "tool.execute.before" }
+    mechanism: { claude: "subprocess", opencode: "execute.before" }
   },
   {
     gate: "unknown",
     event: "PreToolUse",
     script: "block-unknown-tool.sh",
     wiring: { claude: "none", opencode: "wired" },
-    mechanism: { claude: "none", opencode: "tool.execute.before" }
+    mechanism: { claude: "none", opencode: "execute.before" }
   },
   {
     gate: "autocontinue",
     event: "Stop",
     script: "auto-continue.sh",
     wiring: { claude: "wired", opencode: "none" },
-    mechanism: { claude: "subprocess", opencode: "native" }
+    mechanism: { claude: "subprocess", opencode: "experimental.idle" }
   },
   {
     gate: "statebin",
     event: "SessionStart",
     script: "persist-state-bin.sh",
     wiring: { claude: "wired", opencode: "none" },
-    mechanism: { claude: "subprocess", opencode: "native" }
+    mechanism: { claude: "subprocess", opencode: "create.before" }
   },
   {
     gate: "stale",
     event: "SessionStart",
     script: "warn-stale-state.sh",
     wiring: { claude: "wired", opencode: "wired" },
-    mechanism: { claude: "subprocess", opencode: "experimental.chat.system.transform" }
+    mechanism: { claude: "subprocess", opencode: "context" }
   },
   {
     gate: "version",
     event: "SessionStart",
     script: "warn-stale-version.sh",
     wiring: { claude: "wired", opencode: "wired" },
-    mechanism: { claude: "subprocess", opencode: "experimental.chat.system.transform" }
+    mechanism: { claude: "subprocess", opencode: "context" }
   },
   {
     gate: "teardown",
     event: "SessionEnd",
     script: "cleanup-state.sh",
     wiring: { claude: "wired", opencode: "wired" },
-    mechanism: { claude: "subprocess", opencode: "dispose" }
+    mechanism: { claude: "subprocess", opencode: "cleanup" }
   },
   {
     gate: "proddeploy",
     event: "PreToolUse",
     script: "block-prod-deploy.sh",
     wiring: { claude: "wired", opencode: "wired" },
-    mechanism: { claude: "subprocess", opencode: "tool.execute.before" }
+    mechanism: { claude: "subprocess", opencode: "execute.before" }
   },
   {
     gate: "reanchor",
     event: "SessionStart",
     script: "reanchor-after-compact.sh",
     wiring: { claude: "wired", opencode: "wired" },
-    mechanism: { claude: "subprocess", opencode: "event" }
+    mechanism: { claude: "subprocess", opencode: "compaction" }
   },
   {
     gate: "subagentstart",
     event: "SubagentStart",
     script: "in-flight-start",
     wiring: { claude: "wired", opencode: "none" },
-    mechanism: { claude: "subprocess", opencode: "none" }
+    mechanism: { claude: "subprocess", opencode: "event" }
   },
   {
     gate: "subagentstop",
     event: "SubagentStop",
     script: "in-flight-stop",
     wiring: { claude: "wired", opencode: "none" },
-    mechanism: { claude: "subprocess", opencode: "none" }
+    mechanism: { claude: "subprocess", opencode: "event" }
   }
 ];
 var TOOL_ROWS = [
-  { gate: "commit", names: { claude: "Bash", opencode: "bash" }, capability: "write", mandated: "no" },
+  { gate: "commit", names: { claude: "Bash", opencode: "shell" }, capability: "write", mandated: "no" },
   { gate: "edits", names: { claude: "Edit", opencode: "edit" }, capability: "write", mandated: "no" },
-  { gate: "edits", names: { claude: "MultiEdit", opencode: "multiedit" }, capability: "write", mandated: "no" },
+  { gate: "edits", names: { claude: "MultiEdit", opencode: "none" }, capability: "write", mandated: "no" },
   { gate: "edits", names: { claude: "Write", opencode: "write" }, capability: "write", mandated: "no" },
   { gate: "edits", names: { claude: "NotebookEdit", opencode: "none" }, capability: "write", mandated: "no" },
   { gate: "edits", names: { claude: "mcp__fallow__fix_apply", opencode: "fallow_fix_apply" }, capability: "write", mandated: "no" },
-  { gate: "edits", names: { claude: "none", opencode: "apply_patch" }, capability: "write", mandated: "no" },
   { gate: "edits", names: { claude: "none", opencode: "patch" }, capability: "write", mandated: "no" },
-  { gate: "proddeploy", names: { claude: "Bash", opencode: "bash" }, capability: "write", mandated: "no" },
-  { gate: "unknown", names: { claude: "none", opencode: "bash" }, capability: "write", mandated: "no" },
-  { gate: "unknown", names: { claude: "none", opencode: "apply_patch" }, capability: "write", mandated: "no" },
-  { gate: "unknown", names: { claude: "none", opencode: "task" }, capability: "write", mandated: "no" },
-  { gate: "unknown", names: { claude: "none", opencode: "list_mcp_resources" }, capability: "read", mandated: "no" },
-  { gate: "unknown", names: { claude: "none", opencode: "list_mcp_resource_templates" }, capability: "read", mandated: "no" },
-  { gate: "unknown", names: { claude: "none", opencode: "read_mcp_resource" }, capability: "read", mandated: "no" },
+  { gate: "proddeploy", names: { claude: "Bash", opencode: "shell" }, capability: "write", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", opencode: "shell" }, capability: "write", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", opencode: "patch" }, capability: "write", mandated: "no" },
+  { gate: "unknown", names: { claude: "none", opencode: "subagent" }, capability: "write", mandated: "no" },
   { gate: "unknown", names: { claude: "none", opencode: "engram_mem_search" }, capability: "read", mandated: "yes" },
   { gate: "unknown", names: { claude: "none", opencode: "engram_mem_get_observation" }, capability: "read", mandated: "yes" },
   { gate: "unknown", names: { claude: "none", opencode: "engram_mem_save" }, capability: "write", mandated: "yes" },
@@ -260,8 +256,6 @@ var TOOL_ROWS = [
   { gate: "unknown", names: { claude: "none", opencode: "webfetch" }, capability: "read", mandated: "no" },
   { gate: "unknown", names: { claude: "none", opencode: "websearch" }, capability: "read", mandated: "no" },
   { gate: "unknown", names: { claude: "none", opencode: "question" }, capability: "read", mandated: "no" },
-  { gate: "unknown", names: { claude: "none", opencode: "lsp" }, capability: "read", mandated: "no" },
-  { gate: "unknown", names: { claude: "none", opencode: "plan_exit" }, capability: "read", mandated: "no" },
   { gate: "unknown", names: { claude: "none", opencode: "oso_plan_approve" }, capability: "read", mandated: "no" },
   { gate: "unknown", names: { claude: "none", opencode: "oso_plan_cancel" }, capability: "write", mandated: "no" },
   { gate: "unknown", names: { claude: "none", opencode: "oso_wave" }, capability: "write", mandated: "no" }
@@ -478,12 +472,12 @@ function jsonObjectOf(text) {
     return void 0;
   }
 }
-function writeStatePairs(stateFile, pairs, ownerSession) {
+function writeStatePairs(stateFile, pairs, ownerSession, removedKeys = []) {
   const directory = path.dirname(stateFile);
   const read = readStateFile(stateFile);
   if (read.kind === "unreadable") throw new StateFileUnreadableError(stateFile, read.cause);
   const existing = read.kind === "ok" ? read.content : "";
-  let lines = parseStateLines(existing);
+  let lines = parseStateLines(existing).filter((line) => !removedKeys.includes(line.key));
   for (const pair of [...pairs, `session=${ownerSession}`]) {
     const [key, value] = splitPair(pair);
     lines = lines.filter((line) => line.key !== key);
@@ -1190,6 +1184,7 @@ function hooksManifestFingerprinted(manifestFile) {
 // core/src/gates/in-flight.ts
 var SUBAGENT_TASK = "subagent";
 var SUBAGENT_STOP_EVENT = "SubagentStop";
+var SUBAGENT_HANDBACK_TOOL = "SubagentHandback";
 var NOTHING_REGISTERED = { agents: [], unreadable: [] };
 var SUBAGENT_START_GATE = {
   gate: "subagentstart",
@@ -1225,17 +1220,34 @@ function forgetStoppedAgent({ envelope }) {
 }
 function captureVerifierStop(envelope) {
   if (!isVerifierAgent(envelope.agentType)) return;
+  const transcript = agentTranscriptOf(envelope);
   captureVerifierReport({
     host: envelope.caller.host,
     cwd: envelope.cwd,
     session: hookSessionId(envelope),
-    model: launchedModelOf(envelope),
-    report: envelope.lastAssistantMessage
+    model: launchedModelOf(transcript),
+    report: verifierReportOf(envelope.lastAssistantMessage, transcript)
   });
 }
-function launchedModelOf(envelope) {
-  if (!isNameToken(envelope.agentId)) return null;
-  const transcript = derivedTranscriptPath(envelope, envelope.agentId);
+function agentTranscriptOf(envelope) {
+  return isNameToken(envelope.agentId) ? derivedTranscriptPath(envelope, envelope.agentId) : "";
+}
+function verifierReportOf(finalMessage, transcript) {
+  return parseAgentVerdict(finalMessage).verdict === void 0 ? handbackReportOf(transcript) : finalMessage;
+}
+function handbackReportOf(transcript) {
+  if (transcript === "") return "";
+  const lines = (readFileIfPresent(transcript, "skip") ?? "").split("\n");
+  const messages = lines.flatMap(handbackMessagesIn);
+  return messages.at(-1) ?? "";
+}
+function handbackMessagesIn(line) {
+  const content = jsonObjectOf(line)?.["message"]?.content;
+  if (!Array.isArray(content)) return [];
+  const blocks = content;
+  return blocks.filter((block) => block?.type === "tool_use" && block.name === SUBAGENT_HANDBACK_TOOL).map((block) => block?.input?.message).filter((message) => typeof message === "string");
+}
+function launchedModelOf(transcript) {
   if (transcript === "") return null;
   const meta = readFileIfPresent(transcript.replace(/\.jsonl$/, ".meta.json"), "skip");
   const model = meta === void 0 ? void 0 : jsonObjectOf(meta)?.["model"];
@@ -3377,6 +3389,7 @@ var PUSH_OPTIONS_SENDING_MORE_THAN_ITS_REFSPECS = /* @__PURE__ */ new Set([
 var FOLLOW_TAGS_CONFIG = /push\.followtags/i;
 var GIT_CONFIG_VARIABLE = /^GIT_CONFIG_[A-Za-z0-9_]*(=|$)/;
 var TAKE_THE_RUN_BACK = "set auto=done";
+var SHELL_TOOL_NAMES = [...toolNamesFor("claude", "proddeploy"), ...toolNamesFor("opencode", "proddeploy")];
 var PROD_DEPLOY_GATE = {
   gate: "proddeploy",
   errorSubject: "the production boundary gate",
@@ -3392,7 +3405,7 @@ function judgeProductionBoundary({ envelope }) {
   if (envelope.toolName.includes("deploy")) {
     return denyProductionBoundary(boundary, mcpDeployStaysWithTheOperator(session), envelope.toolName);
   }
-  if (envelope.toolName !== "Bash" && envelope.toolName !== "bash") return ALLOWED;
+  if (!SHELL_TOOL_NAMES.includes(envelope.toolName)) return ALLOWED;
   return judgeAgainstDenyPatterns(boundary, envelope.commandLine);
 }
 function judgeAgainstDenyPatterns(boundary, command) {
@@ -3996,7 +4009,7 @@ function harnessTreeTargetOf(envelope) {
 var PATCH_TARGET_MARKER = /^\*\*\* (?:Add File|Update File|Delete File|Move to): (.+)$/gm;
 function writeTargetsOf({ toolName, filePath, patchText }) {
   if (toolName === "edit" || toolName === "write") return filePath === "" ? [] : [filePath];
-  if (toolName === "apply_patch") return [...patchText.matchAll(PATCH_TARGET_MARKER)].map((marker) => (marker[1] ?? "").trim());
+  if (toolName === "patch") return [...patchText.matchAll(PATCH_TARGET_MARKER)].map((marker) => (marker[1] ?? "").trim());
   return [];
 }
 function installedHarnessTree() {
@@ -4104,12 +4117,12 @@ function ambiguousNote(versionLineShape, matches) {
 
 // core/src/install/opencode-host.ts
 var OPENCODE_BINARY_NAME = "opencode";
-var OPENCODE_VERSION_LINE_SHAPE = "a bare dotted version";
+var OPENCODE_VERSION_LINE_SHAPE = "a bare dotted version or `opencode v` and a dotted version";
 var PROBE_HOME_PREFIX = "oso-opencode-probe.";
 var PROBE_TIMEOUT_MILLISECONDS = 1e4;
 var ANSI_SELECT_GRAPHIC_RENDITION = /\u001b\[[0-9;]*m/g;
 var POSIX_SPACE_CLASS = /[ \t\n\v\f\r]/g;
-var OPENCODE_VERSION_LINE = /^(\d+(?:\.\d+)*)$/;
+var OPENCODE_VERSION_LINE = /^(?:opencodev)?(\d+(?:\.\d+)*)$/;
 function openCodeHostProbes(environment) {
   const binaryPath = firstExecutableOnPath(environment, OPENCODE_BINARY_NAME);
   if (binaryPath === void 0) return { version: void 0 };
@@ -4181,7 +4194,7 @@ function openCodeTrustTargetUnder(rootKind, root, published) {
 }
 
 // core/src/install/pins.ts
-var SUPPORTED_OPENCODE_VERSION = "1.18.22";
+var SUPPORTED_OPENCODE_VERSION = "2.2.6";
 var DOTTED_NUMERIC_VERSION = /^\d+(\.\d+)*$/;
 function meetsVersionFloor(found, floor) {
   if (found === void 0 || !DOTTED_NUMERIC_VERSION.test(found)) return false;
@@ -4432,33 +4445,6 @@ function explainedCause(cause) {
 `;
 }
 
-// core/src/prose/applier-proof.ts
-var APPLIER_PROOF_HEADER = "=== applier_proof ===";
-
-// core/src/routes/render.ts
-var OPENCODE_HOOKS = [
-  "tool.execute.before",
-  "experimental.chat.system.transform",
-  "event",
-  "dispose"
-];
-function openCodeRoutes() {
-  return GATE_ROWS.filter((row) => row.wiring.opencode === "wired").map((row) => {
-    const matcher = matcherFor("opencode", row);
-    return {
-      hook: openCodeHookNamed(row.mechanism.opencode, row.gate),
-      gate: row.gate,
-      matcher: matcher === "" ? matcher : wholeToolName(matcher),
-      allow: row.gate === "unknown" ? toolNamesFor("opencode", "unknown") : []
-    };
-  });
-}
-function openCodeHookNamed(mechanism, gate) {
-  const hook = OPENCODE_HOOKS.find((candidate) => candidate === mechanism);
-  if (hook === void 0) throw new Error(`gate ${gate} names no OpenCode hook the adapter routes: ${mechanism}`);
-  return hook;
-}
-
 // core/src/state/plan.ts
 import { chmodSync, existsSync as existsSync3, mkdirSync as mkdirSync5, readFileSync as readFileSync4, renameSync as renameSync3, rmSync as rmSync6 } from "node:fs";
 import path18 from "node:path";
@@ -4506,24 +4492,10 @@ function runCapturePlan(cwd, sessionId, digest, document) {
   const paths = planPaths(stateFile, digest);
   ensurePlanDirectory(paths);
   if (document.length === 0) throw new PlanFailure("capture-plan requires a non-empty plan document on stdin");
-  const uncheckedSlice = firstSliceNamingNoCheck(document);
-  if (uncheckedSlice !== void 0) {
-    throw new PlanFailure(
-      `capture-plan requires slice ${uncheckedSlice} to name ${VERIFY_CHECK_TOKENS.join(" or ")} on its Verify line`
-    );
-  }
+  refuseASliceNamingNoCheck("capture-plan", document);
   return withLock(stateFile, sessionId, () => {
     refuseGateWritesByAForeignSession(stateFile, sessionId);
-    if (existsSync3(paths.presentedFile)) {
-      if (!isPrivateRegularFile(paths.presentedFile)) {
-        throw new PlanFailure("presented snapshot is not a private regular file");
-      }
-      if (readFileSync4(paths.presentedFile, "utf8") !== document) {
-        throw new PlanFailure("presented snapshot content disagrees with its approval digest");
-      }
-    } else {
-      writeFileAtomically(paths.dir, paths.presentedFile, document, ".snapshot.");
-    }
+    writePresentedSnapshot(paths, document);
     if (existsSync3(paths.currentFile) && !isPrivateRegularFile(paths.currentFile)) {
       throw new PlanFailure("current plan is not a private regular file");
     }
@@ -4542,9 +4514,111 @@ function runCapturePlan(cwd, sessionId, digest, document) {
         `plan_current_file=${paths.currentFile}`,
         "plan_revision=0"
       ],
-      sessionId
+      sessionId,
+      PRESENTED_PLAN_KEYS
     );
     logEvent({ event: "plan-artifact-captured", session: sessionId, command: digest });
+    return 0;
+  });
+}
+var PRESENTED_PLAN_KEYS = ["plan_presented_digest", "plan_presented_base", "plan_presented_turn"];
+function heldPlanOf(cwd) {
+  const stateFile = stateFileFor(cwd);
+  const approval = readValue(stateFile, "plan_approval");
+  if (approval === void 0 || approval === "cancelled") return { kind: "none" };
+  if (approval !== "pending" && approval !== "approved") {
+    throw new PlanFailure(`the held plan has an unknown approval state: ${approval}`);
+  }
+  const digest = readValue(stateFile, "plan_approval_digest") ?? "";
+  if (!isValidPlanDigest(digest)) throw new PlanFailure("the plan has no valid digest");
+  const paths = planPaths(stateFile, digest);
+  const snapshotFile = approval === "approved" ? paths.approvedFile : paths.presentedFile;
+  if (readValue(stateFile, "plan_snapshot_file") !== snapshotFile) {
+    throw new PlanFailure("plan state does not name its expected immutable snapshot");
+  }
+  if (readValue(stateFile, "plan_current_file") !== paths.currentFile) {
+    throw new PlanFailure("plan state does not name its operational plan");
+  }
+  return {
+    kind: "held",
+    approval,
+    digest,
+    document: privatePlanText(snapshotFile, "the immutable snapshot"),
+    current: privatePlanText(paths.currentFile, "current plan")
+  };
+}
+function presentedPlanOf(cwd) {
+  const stateFile = stateFileFor(cwd);
+  const [digest, base, turn] = PRESENTED_PLAN_KEYS.map((key) => readValue(stateFile, key));
+  if (digest === void 0 || base === void 0 || turn === void 0 || !isValidPlanDigest(digest)) return void 0;
+  if (!isPrivateRegularFile(planPaths(stateFile, digest).presentedFile)) return void 0;
+  return { digest, base, turn };
+}
+function runPresentPlan(cwd, sessionId, digest, document, turn) {
+  if (!isValidPlanDigest(digest)) throw new PlanFailure("present-plan requires one lowercase SHA-256 digest");
+  if (turn === "" || turn.includes("\n")) throw new PlanFailure("present-plan requires a single-line turn id");
+  const stateFile = stateFileFor(cwd);
+  const paths = planPaths(stateFile, digest);
+  ensurePlanDirectory(paths);
+  if (document.length === 0) throw new PlanFailure("present-plan requires a non-empty plan document");
+  if (sha256Hex(document) !== digest) {
+    throw new PlanFailure("present-plan requires the SHA-256 digest of the document it presents");
+  }
+  refuseASliceNamingNoCheck("present-plan", document);
+  return withLock(stateFile, sessionId, () => {
+    refuseGateWritesByAForeignSession(stateFile, sessionId);
+    const held = heldPlanOf(cwd);
+    if (held.kind === "none") throw new PlanFailure("present-plan requires a held plan; capture a first plan instead");
+    refuseReplacingAHeldPlanWhileASliceIsActive(cwd, "present-plan");
+    if (held.digest === digest) throw new PlanFailure("the held plan is already this document");
+    writePresentedSnapshot(paths, document);
+    writeStatePairs(
+      stateFile,
+      [`plan_presented_digest=${digest}`, `plan_presented_base=${held.digest}`, `plan_presented_turn=${turn}`],
+      sessionId
+    );
+    logEvent({ event: "plan-presented", session: sessionId, command: digest });
+    return 0;
+  });
+}
+function runSupersedePlan(cwd, sessionId, digest) {
+  if (!isValidPlanDigest(digest)) throw new PlanFailure("supersede-plan requires one lowercase SHA-256 digest");
+  const stateFile = stateFileFor(cwd);
+  const paths = planPaths(stateFile, digest);
+  ensurePlanDirectory(paths);
+  return withLock(stateFile, sessionId, () => {
+    refuseGateWritesByAForeignSession(stateFile, sessionId);
+    if (readValue(stateFile, "plan_presented_digest") !== digest) {
+      throw new PlanFailure("supersede-plan requires the presented plan to carry this digest");
+    }
+    const document = privatePlanText(paths.presentedFile, "presented snapshot");
+    if (sha256Hex(document) !== digest) {
+      throw new PlanFailure("supersede-plan requires the presented snapshot to hash to its digest");
+    }
+    if (heldPlanOf(cwd).kind === "none") throw new PlanFailure("supersede-plan requires a held plan");
+    refuseReplacingAHeldPlanWhileASliceIsActive(cwd, "supersede-plan");
+    const revisionText = readValue(stateFile, "plan_revision") ?? "0";
+    if (!/^[0-9]+$/.test(revisionText)) throw new PlanFailure("current plan has no valid revision");
+    promotePresentedSnapshot(paths, "the presented document");
+    writeFileAtomically(paths.dir, paths.currentFile, document, ".current.");
+    const arming = armPlan();
+    writeStatePairs(
+      stateFile,
+      [
+        `mode=${arming.mode}`,
+        `active_slice=${arming.active_slice}`,
+        `verify_green=${arming.verify_green}`,
+        "plan_approval=approved",
+        `plan_approval_digest=${digest}`,
+        `plan_approval_session=${sessionId}`,
+        `plan_snapshot_file=${paths.approvedFile}`,
+        `plan_current_file=${paths.currentFile}`,
+        `plan_revision=${Number(revisionText) + 1}`
+      ],
+      sessionId,
+      PRESENTED_PLAN_KEYS
+    );
+    logEvent({ event: "plan-superseded", session: sessionId, command: digest });
     return 0;
   });
 }
@@ -4585,17 +4659,7 @@ function runApprovePlan(cwd, sessionId, digest) {
       if (!byteIdentical(paths.currentFile, paths.presentedFile)) {
         throw new PlanFailure("the pending plan changed since it was presented; capture it again before approving");
       }
-      if (existsSync3(paths.approvedFile)) {
-        if (!isPrivateRegularFile(paths.approvedFile)) {
-          throw new PlanFailure("approved snapshot is not a private regular file");
-        }
-        if (!byteIdentical(paths.presentedFile, paths.approvedFile)) {
-          throw new PlanFailure("approved snapshot content disagrees with the pending document");
-        }
-        rmSync6(paths.presentedFile, { force: true });
-      } else {
-        renameSync3(paths.presentedFile, paths.approvedFile);
-      }
+      promotePresentedSnapshot(paths, "the pending document");
     } else if (!isPrivateRegularFile(paths.approvedFile)) {
       throw new PlanFailure("presented plan snapshot is missing");
     }
@@ -4630,7 +4694,8 @@ function runCancelApprovedPlan(cwd, sessionId, digest) {
         `verify_green=${disarming.verify_green}`,
         "plan_approval=cancelled"
       ],
-      sessionId
+      sessionId,
+      PRESENTED_PLAN_KEYS
     );
     logEvent({ event: "plan-approval-abandoned", session: sessionId, command: digest });
     return 0;
@@ -4639,12 +4704,59 @@ function runCancelApprovedPlan(cwd, sessionId, digest) {
 function byteIdentical(leftFile, rightFile) {
   return readFileSync4(leftFile).equals(readFileSync4(rightFile));
 }
+function writePresentedSnapshot(paths, document) {
+  if (!existsSync3(paths.presentedFile)) {
+    writeFileAtomically(paths.dir, paths.presentedFile, document, ".snapshot.");
+    return;
+  }
+  if (!isPrivateRegularFile(paths.presentedFile)) {
+    throw new PlanFailure("presented snapshot is not a private regular file");
+  }
+  if (readFileSync4(paths.presentedFile, "utf8") !== document) {
+    throw new PlanFailure("presented snapshot content disagrees with its approval digest");
+  }
+}
+function promotePresentedSnapshot(paths, promotedLabel) {
+  if (!existsSync3(paths.approvedFile)) {
+    renameSync3(paths.presentedFile, paths.approvedFile);
+    return;
+  }
+  if (!isPrivateRegularFile(paths.approvedFile)) {
+    throw new PlanFailure("approved snapshot is not a private regular file");
+  }
+  if (!byteIdentical(paths.presentedFile, paths.approvedFile)) {
+    throw new PlanFailure(`approved snapshot content disagrees with ${promotedLabel}`);
+  }
+  rmSync6(paths.presentedFile, { force: true });
+}
+function privatePlanText(file, label) {
+  if (!isPrivateRegularFile(file)) throw new PlanFailure(`${label} is missing or unsafe: ${file}`);
+  return readFileSync4(file, "utf8");
+}
+function refuseReplacingAHeldPlanWhileASliceIsActive(cwd, verb) {
+  const stateFile = stateFileFor(cwd);
+  const approval = readValue(stateFile, "plan_approval");
+  if (approval === void 0 || approval === "cancelled") return;
+  const activeSlice = readValue(stateFile, "active_slice") ?? "none";
+  if (activeSlice !== "none") {
+    throw new PlanFailure(`${verb} is refused while ${activeSlice} is active; close or abandon the active slice first`);
+  }
+}
+var EXECUTION_AMENDMENT_HEADING = "Execution amendment";
+var PLAN_MODE_FEEDBACK_HEADING = "Plan Mode feedback";
 var VERIFY_CHECK_TOKENS = ["failing-check:", "Verify-exception:"];
 var THE_FIELD_ONLY_A_SLICE_BLOCK_CARRIES = "Depends-on";
 var MARKDOWN_LIST_OR_HEADING = /^[\s>]*(?:#{1,6}\s+)?(?:[-*+]\s+|\d+[.)]\s+)?(?:\[[ xX]\]\s+)?/;
 var MARKDOWN_EMPHASIS = /^[*_]{1,3}/;
 var SLICE_LABEL = /^(S\d+|Slice\s+\d+)(?:\s+[A-Z]{2,})*(?:\s*\([^)]*\))?\s*[—–:-]/;
 var MARKDOWN_HEADING = /^[\s>]*(#{1,6})\s+/;
+function refuseASliceNamingNoCheck(verb, document) {
+  const uncheckedSlice = firstSliceNamingNoCheck(document);
+  if (uncheckedSlice === void 0) return;
+  throw new PlanFailure(
+    `${verb} requires slice ${uncheckedSlice} to name ${VERIFY_CHECK_TOKENS.join(" or ")} on its Verify line`
+  );
+}
 function firstSliceNamingNoCheck(document) {
   return sliceBlocksIn(document).find(({ text }) => !namesAVerifyCheck(text))?.label;
 }
@@ -4685,13 +4797,241 @@ function namesAVerifyCheck(blockText) {
   return VERIFY_CHECK_TOKENS.some((token) => lowered.includes(token.toLowerCase()));
 }
 
+// core/src/plan/delta.ts
+var PlanDeltaError = class extends Error {
+};
+function planDeltaOf({ base, next, current }) {
+  if (base.length === 0) throw new PlanDeltaError("plan delta requires a non-empty base document");
+  if (next.length === 0) throw new PlanDeltaError("plan delta requires a non-empty next document");
+  return {
+    segments: alignedSegments(sectionsOf(base), sectionsOf(next)),
+    droppedAmendments: amendmentsIn(current ?? "").filter(({ text }) => !next.includes(text))
+  };
+}
+function renderPlanDelta(delta) {
+  return [...segmentReport(delta.segments), ...droppedAmendmentReport(delta.droppedAmendments), ""].join("\n");
+}
+function planDeltaSummaryOf(delta) {
+  return `${segmentSummaryOf(delta.segments)} Dropped amendments: ${delta.droppedAmendments.length}.`;
+}
+function planDeltaDigestOf(delta) {
+  return sha256Hex(renderPlanDelta(delta));
+}
+var LINE_WITH_TERMINATOR = /[^\n]*\n|[^\n]+$/g;
+function sectionsOf(document) {
+  const sections = [];
+  const occurrences = /* @__PURE__ */ new Map();
+  const nextOccurrence = (scope) => {
+    const scopeId = JSON.stringify(scope);
+    const occurrence = (occurrences.get(scopeId) ?? 0) + 1;
+    occurrences.set(scopeId, occurrence);
+    return occurrence;
+  };
+  let enclosing;
+  for (const line of document.match(LINE_WITH_TERMINATOR) ?? []) {
+    const heading = headingTextOf(line);
+    const slice = sliceLabelOpening(line);
+    if (heading !== void 0) {
+      const name = slice ?? heading;
+      enclosing = { kind: "heading", heading: name, occurrence: nextOccurrence([name]) };
+      sections.push({ key: enclosing, body: line });
+    } else if (slice !== void 0 && enclosing !== void 0) {
+      const occurrence = nextOccurrence([enclosing.heading, enclosing.occurrence, slice]);
+      sections.push({ key: { kind: "slice", section: enclosing, slice, occurrence }, body: line });
+    } else {
+      const open = sections.at(-1);
+      if (open === void 0) sections.push({ key: { kind: "preamble" }, body: line });
+      else open.body += line;
+    }
+  }
+  return sections.map(({ key, body }) => ({ key, alignmentId: JSON.stringify(key), body }));
+}
+function headingTextOf(line) {
+  const bare = withoutTerminator(line);
+  const marker = MARKDOWN_HEADING.exec(bare);
+  return marker === null ? void 0 : bare.slice(marker[0].length).trim();
+}
+function withoutTerminator(text) {
+  return text.endsWith("\n") ? text.slice(0, -1) : text;
+}
+function alignedSegments(baseSections, nextSections) {
+  const baseIds = baseSections.map(({ alignmentId }) => alignmentId);
+  const nextIds = nextSections.map(({ alignmentId }) => alignmentId);
+  const keptInOrder = idsKeptInOrder(baseIds, nextIds);
+  const pendingRemovals = baseSections.flatMap(
+    ({ key, alignmentId, body }, basePosition) => nextIds.includes(alignmentId) ? [] : [{ kind: "removed", key, base: body, basePosition }]
+  );
+  const segments = [];
+  nextSections.forEach((section, nextPosition) => {
+    const basePosition = baseIds.indexOf(section.alignmentId);
+    if (basePosition === -1) {
+      segments.push({ kind: "added", key: section.key, next: section.body, nextPosition });
+      return;
+    }
+    const moved = !keptInOrder.has(section.alignmentId);
+    if (!moved) {
+      const removedBefore = pendingRemovals.filter((removal) => removal.basePosition < basePosition);
+      segments.push(...pendingRemovals.splice(0, removedBefore.length));
+    }
+    segments.push(alignedSegment(baseSections[basePosition], section, { basePosition, nextPosition, moved }));
+  });
+  return [...segments, ...pendingRemovals];
+}
+function idsKeptInOrder(baseIds, nextIds) {
+  const sharedBase = baseIds.filter((id) => nextIds.includes(id));
+  const sharedNext = nextIds.filter((id) => baseIds.includes(id));
+  const kept = sequenceDiffOf(sharedBase, sharedNext).filter(({ change }) => change === "kept");
+  return new Set(kept.map(({ line }) => line));
+}
+function alignedSegment(baseSection, nextSection, placement) {
+  const fields = { key: nextSection.key, base: baseSection.body, next: nextSection.body, ...placement };
+  if (baseSection.body === nextSection.body) return { kind: "unchanged", ...fields };
+  const onlyWhitespaceDiffers = collapsedWhitespace(baseSection.body) === collapsedWhitespace(nextSection.body);
+  const kind = onlyWhitespaceDiffers ? "format-only" : "changed";
+  return { kind, lines: sequenceDiffOf(linesOf(baseSection.body), linesOf(nextSection.body)), ...fields };
+}
+function collapsedWhitespace(text) {
+  return text.replace(/\s+/g, " ").trim();
+}
+function linesOf(body) {
+  return withoutTerminator(body).split("\n");
+}
+function sequenceDiffOf(base, next) {
+  const width = next.length + 1;
+  const commonFrom = new Uint32Array((base.length + 1) * width);
+  const common = (baseAt2, nextAt2) => commonFrom[baseAt2 * width + nextAt2] ?? 0;
+  for (let baseAt2 = base.length - 1; baseAt2 >= 0; baseAt2 -= 1) {
+    for (let nextAt2 = next.length - 1; nextAt2 >= 0; nextAt2 -= 1) {
+      commonFrom[baseAt2 * width + nextAt2] = base[baseAt2] === next[nextAt2] ? common(baseAt2 + 1, nextAt2 + 1) + 1 : Math.max(common(baseAt2 + 1, nextAt2), common(baseAt2, nextAt2 + 1));
+    }
+  }
+  const changes = [];
+  let baseAt = 0;
+  let nextAt = 0;
+  while (baseAt < base.length && nextAt < next.length) {
+    if (base[baseAt] === next[nextAt]) {
+      changes.push({ change: "kept", line: base[baseAt] });
+      baseAt += 1;
+      nextAt += 1;
+    } else if (common(baseAt + 1, nextAt) >= common(baseAt, nextAt + 1)) {
+      changes.push({ change: "removed", line: base[baseAt] });
+      baseAt += 1;
+    } else {
+      changes.push({ change: "added", line: next[nextAt] });
+      nextAt += 1;
+    }
+  }
+  return [
+    ...changes,
+    ...base.slice(baseAt).map((line) => ({ change: "removed", line })),
+    ...next.slice(nextAt).map((line) => ({ change: "added", line }))
+  ];
+}
+var AMENDMENT_OPENING = new RegExp(`^## (${EXECUTION_AMENDMENT_HEADING}|${PLAN_MODE_FEEDBACK_HEADING}) \u2014 (\\S+)$`);
+var AMENDMENT_METADATA_THEN_TEXT = /^\n(?:- [^\n]*\n)+\n([\s\S]*)$/;
+function amendmentsIn(current) {
+  const opened = [];
+  for (const line of current.split("\n")) {
+    const opening = AMENDMENT_OPENING.exec(line);
+    if (opening === null) opened.at(-1)?.lines.push(line);
+    else opened.push({ heading: opening[1], sliceId: opening[2], lines: [] });
+  }
+  return opened.map(({ heading, sliceId, lines }) => {
+    const metadataThenText = AMENDMENT_METADATA_THEN_TEXT.exec(lines.join("\n"));
+    if (metadataThenText === null) {
+      throw new PlanDeltaError(
+        `current.md amendment "${heading} \u2014 ${sliceId}" carries no metadata block before its text`
+      );
+    }
+    return { heading, sliceId, text: metadataThenText[1].trimEnd() };
+  });
+}
+var SEGMENT_KINDS = ["changed", "added", "removed", "format-only", "unchanged"];
+function segmentReport(segments) {
+  const differing = segments.filter(differs);
+  if (differing.length === 0) return [segmentSummaryOf(segments)];
+  const unchanged = segments.filter((segment) => segment.kind === "unchanged" && !segment.moved);
+  return [
+    segmentSummaryOf(segments),
+    ...unchanged.length === 0 ? [] : [`Unchanged: ${unchanged.map(({ key }) => labelOf(key)).join(", ")}.`],
+    ...differing.flatMap((segment) => [
+      `${segment.kind} ${labelOf(segment.key)}${isMoved(segment) ? ", moved" : ""}`,
+      ...signedLinesOf(segment).map((line) => `  ${line}`)
+    ])
+  ];
+}
+function segmentSummaryOf(segments) {
+  if (!segments.some(differs)) return `No changes: the new plan matches the base in all ${segments.length} sections.`;
+  const counts = SEGMENT_KINDS.map((kind) => `${segments.filter((segment) => segment.kind === kind).length} ${kind}`);
+  return `Plan delta: ${counts.join(", ")}, ${segments.filter(isMoved).length} moved.`;
+}
+function differs(segment) {
+  return segment.kind !== "unchanged" || segment.moved;
+}
+function isMoved(segment) {
+  return segment.kind !== "added" && segment.kind !== "removed" && segment.moved;
+}
+function labelOf(key) {
+  if (key.kind === "preamble") return "preamble";
+  if (key.kind === "slice") {
+    return `${key.slice}${key.occurrence === 1 ? "" : ` #${key.occurrence}`} in ${labelOf(key.section)}`;
+  }
+  return key.occurrence === 1 ? `"${key.heading}"` : `"${key.heading}" #${key.occurrence}`;
+}
+function signedLinesOf(segment) {
+  if (segment.kind === "added") return linesOf(segment.next).map((line) => `+ ${line}`);
+  if (segment.kind === "removed") return linesOf(segment.base).map((line) => `- ${line}`);
+  if (segment.kind === "unchanged") return [];
+  return segment.lines.flatMap(({ change, line }) => {
+    if (change === "kept") return [];
+    return [`${change === "added" ? "+" : "-"} ${line}`];
+  });
+}
+function droppedAmendmentReport(amendments) {
+  if (amendments.length === 0) return ["Dropped amendments: none."];
+  return [
+    `Dropped amendments: ${amendments.length}.`,
+    ...amendments.flatMap(({ heading, sliceId, text }) => [
+      `- ${heading} \u2014 ${sliceId}`,
+      ...text.split("\n").map((line) => `  ${line}`)
+    ])
+  ];
+}
+
+// core/src/prose/applier-proof.ts
+var APPLIER_PROOF_HEADER = "=== applier_proof ===";
+
+// core/src/routes/render.ts
+var OPENCODE_HOOKS = [
+  "execute.before",
+  "context",
+  "compaction",
+  "cleanup"
+];
+function openCodeRoutes() {
+  return GATE_ROWS.filter((row) => row.wiring.opencode === "wired").map((row) => {
+    const matcher = matcherFor("opencode", row);
+    return {
+      hook: openCodeHookNamed(row.mechanism.opencode, row.gate),
+      gate: row.gate,
+      matcher: matcher === "" ? matcher : wholeToolName(matcher),
+      allow: row.gate === "unknown" ? toolNamesFor("opencode", "unknown") : []
+    };
+  });
+}
+function openCodeHookNamed(mechanism, gate) {
+  const hook = OPENCODE_HOOKS.find((candidate) => candidate === mechanism);
+  if (hook === void 0) throw new Error(`gate ${gate} names no OpenCode hook the adapter routes: ${mechanism}`);
+  return hook;
+}
+
 // opencode/plugin/oso/identity.ts
 import { createHash as createHash2 } from "node:crypto";
 import { existsSync as existsSync4, readFileSync as readFileSync5, statSync as statSync3 } from "node:fs";
 import { dirname, isAbsolute, join, resolve, sep } from "node:path";
 function deriveRootId(cwd) {
   const meta = findGitMetadata(cwd);
-  return meta === null ? "" : hashId(meta.commonDir);
+  return hashId(meta === null ? resolve(cwd) : meta.commonDir);
 }
 function commonDirOf(cwd) {
   const meta = findGitMetadata(cwd);
@@ -4791,144 +5131,37 @@ function stateKeyOf(directory, key) {
   return readValue(stateFileFor(directory), key) ?? "";
 }
 
-// opencode/plugin/oso/approval.ts
-var PLAN_APPROVAL_TOOL_ID = "oso_plan_approve";
-var PLAN_CANCEL_TOOL_ID = "oso_plan_cancel";
-function planApprovalTool() {
-  return {
-    description: "The approval gate for the oso-code plan mode's phases 1 through 5. Deliver the complete phase-5 document as turn-ending plain text first, then call this tool in a later turn carrying those exact bytes. The operator's answer to the authorization prompt this raises IS the approval: a grant records the approved plan and opens the amendment lane against it, and a refusal comes back as an error approving nothing \u2014 the presentation captured before the prompt stays on disk unpromoted, so this repository is left exactly as unapproved as it was. Nothing this session says or writes can stand in for that answer, and no earlier grant carries over to a later call. A material change to the document invalidates the approval it already carries: present the whole plan again and call this tool again, which binds a fresh digest.",
-    args: {
-      plan: {
-        type: "string",
-        description: "The complete phase-5 document, byte for byte as the operator just read it."
-      }
-    },
-    execute: async (args, call) => approveOnOperatorGrant(planDocumentOf(args), call)
-  };
-}
-function planCancelTool() {
-  return {
-    description: "Abandons the approved plan this repository is executing, at the operator's explicit request and never on your own reading of one. The operator's answer to the authorization prompt this raises IS the abandonment. A grant writes mode=plan, active_slice=none, verify_green=false and plan_approval=cancelled, which closes the edit and commit gates and leaves nothing for the amendment lane to amend; the approved document, the run's own markers and every other state key are left exactly as they stand. Call it only when the operator asks to abandon the plan, never to unstick a denied tool call.",
-    args: {},
-    execute: async (_args, call) => cancelOnOperatorGrant(call)
-  };
-}
-async function approveOnOperatorGrant(planDocument, call) {
-  const { askOperator, directory, owner, sessionID } = grantBoundCall(PLAN_APPROVAL_TOOL_ID, call);
-  const digest = sha256Hex(planDocument);
-  runCapturePlan(directory, owner, digest, planDocument);
-  await askOperator({
-    permission: PLAN_APPROVAL_TOOL_ID,
-    patterns: [digest],
-    always: [],
-    metadata: { digest, characters: planDocument.length }
-  });
-  promoteThePresentedPlan(directory, owner, digest);
-  return {
-    title: "plan approved",
-    output: `The operator granted ${PLAN_APPROVAL_TOOL_ID} for the plan document whose digest is ${digest}. Execution may begin against that exact document, and the operational plan is amendable under ${owner}.`,
-    metadata: { digest, owner, session: sessionID }
-  };
-}
-async function cancelOnOperatorGrant(call) {
-  const { askOperator, directory, owner, sessionID } = grantBoundCall(PLAN_CANCEL_TOOL_ID, call);
-  const approved = approvedPlanFor(directory, owner);
-  if (approved.kind !== "approved") {
-    throw new Error(`${PLAN_CANCEL_TOOL_ID} has no approved plan to abandon: ${approved.detail}`);
-  }
-  await askOperator({
-    permission: PLAN_CANCEL_TOOL_ID,
-    patterns: [approved.digest],
-    always: [],
-    metadata: { digest: approved.digest }
-  });
-  abandonTheApprovedPlan(directory, owner, approved.digest);
-  return {
-    title: "plan abandoned",
-    output: `The operator granted ${PLAN_CANCEL_TOOL_ID} for the approved plan whose digest is ${approved.digest}. Its state now reads plan_approval=cancelled beside the disarmed triple, so no slice is armed, no commit passes the green gate and no amendment lands; the approved document itself is untouched.`,
-    metadata: { digest: approved.digest, session: sessionID }
-  };
-}
-function promoteThePresentedPlan(directory, owner, digest) {
-  try {
-    runApprovePlan(directory, owner, digest);
-  } catch (err) {
-    if (!(err instanceof PlanApprovalError) && !(err instanceof PlanFailure)) throw err;
-    throw new Error(`${PLAN_APPROVAL_TOOL_ID} did not record the operator's approval: ${err.message}`);
-  }
-}
-function abandonTheApprovedPlan(directory, owner, digest) {
-  try {
-    runCancelApprovedPlan(directory, owner, digest);
-  } catch (err) {
-    if (!(err instanceof PlanApprovalError) && !(err instanceof GatesOwnedElsewhereError)) throw err;
-    throw new Error(`${PLAN_CANCEL_TOOL_ID} did not abandon the plan: ${err.message}`);
-  }
-}
-function grantBoundCall(toolId, call) {
-  const askOperator = call.ask;
-  if (askOperator === void 0) {
-    throw new Error(
-      `${toolId} cannot run: this host handed the plugin no permission API to raise the operator's approval with`
-    );
-  }
-  const sessionID = call.sessionID ?? "";
-  if (sessionID === "") {
-    throw new Error(`${toolId} cannot run: the host named no session to raise the operator's prompt in`);
-  }
-  const directory = call.directory ?? "";
-  const commonDir = commonDirOf(directory);
-  if (commonDir === "") {
-    throw new Error(
-      `${toolId} must run inside a git repository, and ${directory || "the directory the host named"} is not one`
-    );
-  }
-  return { askOperator, directory, owner: deriveRootId(directory), sessionID };
-}
-function planDocumentOf(args) {
-  const plan = args?.plan;
-  if (typeof plan !== "string" || plan.trim() === "") {
-    throw new Error(`${PLAN_APPROVAL_TOOL_ID} needs the plan document it is asking the operator to approve`);
-  }
-  return plan;
-}
-
-// opencode/plugin/oso/installed-tree.ts
-import { dirname as dirname2, resolve as resolve2 } from "node:path";
-import { fileURLToPath as fileURLToPath2 } from "node:url";
-function stateBinPath2() {
-  const explicit = process.env.OSO_STATE_BIN;
-  if (explicit !== void 0 && explicit !== "") {
-    return explicit;
-  }
-  return resolve2(dirname2(fileURLToPath2(import.meta.url)), "..", "bin", "oso-state");
-}
+// opencode/plugin/oso/tool.ts
+var DIRECT_CALL = { codemode: false };
 
 // opencode/plugin/oso/wave.ts
 import { isAbsolute as isAbsolute2 } from "node:path";
 
 // opencode/plugin/oso/verdict-capture.ts
-var TASK_TOOL = "task";
-function captureTaskVerdict(input, output, directory) {
-  const call = input ?? {};
-  const result = output ?? {};
-  const subagentType = call.args?.subagent_type;
-  if (call.tool !== TASK_TOOL || typeof subagentType !== "string" || !isVerifierAgent(subagentType)) {
+var SUBAGENT_TOOL = "subagent";
+var SUBAGENT_RUNNING = "running";
+function captureSubagentVerdict(call, directory) {
+  const agent = call.input?.agent;
+  if (call.tool !== SUBAGENT_TOOL || typeof agent !== "string" || !isVerifierAgent(agent)) {
     return;
   }
-  if (result.metadata?.background === true || typeof result.output !== "string") {
-    return;
+  const report = subagentReportOf(call);
+  if (report !== void 0) {
+    captureOpenCodeVerifierReport({ directory, model: null, report });
   }
-  captureOpenCodeVerifierReport({ directory, model: launchedModelOf2(result), report: result.output });
 }
 function captureOpenCodeVerifierReport({ directory, model, report }) {
   captureVerifierReport({ host: "opencode", cwd: directory, session: deriveRootId(directory), model, report });
 }
-function launchedModelOf2(result) {
-  const model = result.metadata?.model;
-  const providerID = model?.providerID;
-  const modelID = model?.modelID;
-  return typeof providerID === "string" && typeof modelID === "string" ? `${providerID}/${modelID}` : null;
+function subagentReportOf(call) {
+  if (call.status === "error") {
+    return "";
+  }
+  const outcome = call.result?.output ?? {};
+  if (outcome.status === SUBAGENT_RUNNING) {
+    return void 0;
+  }
+  return typeof outcome.output === "string" ? outcome.output : "";
 }
 
 // opencode/plugin/oso/wave.ts
@@ -4954,7 +5187,8 @@ async function pinChildSession(launch, projectCommonDir, request) {
       () => request.transport.create({
         directory: launch.worktree,
         title: `${HOST_AGENT[launch.agent]} in ${launch.worktree}`,
-        parentSessionID: request.parentSessionID
+        parentSessionID: request.parentSessionID,
+        hostAgent: HOST_AGENT[launch.agent]
       }),
       request.timeoutMs
     );
@@ -5003,8 +5237,6 @@ async function collectChildReport(child, request) {
     const raw = await withinBound(
       () => request.transport.prompt({
         sessionID: child.sessionID,
-        directory: child.launch.worktree,
-        hostAgent: HOST_AGENT[child.launch.agent],
         prompt: promptOf(child.launch)
       }),
       request.timeoutMs
@@ -5021,7 +5253,7 @@ async function collectChildReport(child, request) {
       raw
     };
   } catch (error) {
-    const unstopped = await stopChild(child.sessionID, child.launch.worktree, request.transport);
+    const unstopped = await interruptChild(child.sessionID, request.transport);
     const failure = `the child turn did not complete: ${messageOf2(error)}`;
     return {
       outcome: "blocked",
@@ -5038,47 +5270,57 @@ function promptOf({ prompt, applierProof }) {
 ${APPLIER_PROOF_HEADER}
 ${applierProof}`;
 }
-var ABORT_BOUND_MS = 1e4;
-async function stopChild(sessionID, directory, transport) {
+var INTERRUPT_BOUND_MS = 1e4;
+async function interruptChild(sessionID, transport) {
   try {
-    await withinBound(() => transport.abort({ sessionID, directory }), ABORT_BOUND_MS);
+    await withinBound(() => transport.interrupt({ sessionID }), INTERRUPT_BOUND_MS);
     return void 0;
   } catch (error) {
     return `the child session was left running: ${messageOf2(error)}`;
   }
 }
+function lastMessageOfType(messages, type) {
+  return [...messages].reverse().find((message) => message.type === type);
+}
 function pinnedSessionTransport(session) {
   return {
-    create: ({ directory, title, parentSessionID }) => unwrap(session.create({
-      query: { directory },
-      body: parentSessionID === "" ? { title } : { title, parentID: parentSessionID }
-    })),
-    prompt: async ({ sessionID, directory, hostAgent, prompt }) => finalMessageText(await unwrap(session.prompt({
-      path: { id: sessionID },
-      query: { directory },
-      body: { agent: hostAgent, parts: [{ type: "text", text: prompt }] }
-    }))),
-    abort: async ({ sessionID, directory }) => {
-      await unwrap(session.abort({ path: { id: sessionID }, query: { directory } }));
+    create: async ({ directory, title, parentSessionID, hostAgent }) => {
+      const { id } = await session.create({
+        location: { directory },
+        title,
+        agent: hostAgent,
+        parentID: parentSessionID === "" ? void 0 : parentSessionID
+      });
+      await session.move({ sessionID: id, directory });
+      await session.wait({ sessionID: id });
+      const pinned = await session.get({ sessionID: id });
+      return { id, directory: pinned.location.directory };
+    },
+    prompt: async ({ sessionID, prompt }) => {
+      await session.prompt({ sessionID, text: prompt });
+      await session.wait({ sessionID });
+      return finalReplyText(await session.context({ sessionID }));
+    },
+    interrupt: async ({ sessionID }) => {
+      await session.interrupt({ sessionID });
     }
   };
 }
-async function unwrap(call) {
-  const result = await call;
-  if (result.data === void 0) {
-    throw new Error(messageOf2(result.error));
+function finalReplyText(messages) {
+  const lastUser = [...messages].reverse().findIndex((message) => message.type === "user");
+  const turn = lastUser === -1 ? messages : messages.slice(messages.length - lastUser);
+  const end = lastMessageOfType(turn, "idle");
+  if (end === void 0) {
+    throw new Error("the host reported no end of turn for the child session");
   }
-  return result.data;
-}
-function finalMessageText(reply) {
-  if (!Array.isArray(reply.parts)) {
-    throw new Error("the host returned a reply with no message parts");
+  if (end.outcome !== "succeeded") {
+    throw new Error(`the child turn ended ${end.outcome}${end.error === void 0 ? "" : `: ${messageOf2(end.error)}`}`);
   }
-  return reply.parts.filter(isTextPart).map((part) => part.text).join("\n");
-}
-function isTextPart(part) {
-  const record = part;
-  return typeof record === "object" && record !== null && record.type === "text" && typeof record.text === "string";
+  const reply = lastMessageOfType(turn, "assistant");
+  if (reply === void 0) {
+    throw new Error("the host returned no assistant reply for the child session");
+  }
+  return reply.content.flatMap((part) => part.type === "text" ? [part.text] : []).join("\n");
 }
 function messageOf2(error) {
   if (error instanceof Error) {
@@ -5109,6 +5351,223 @@ function withinBound(run, timeoutMs) {
   });
 }
 
+// opencode/plugin/oso/approval.ts
+var PLAN_APPROVAL_TOOL_ID = "oso_plan_approve";
+var PLAN_CANCEL_TOOL_ID = "oso_plan_cancel";
+function planApprovalTool(host) {
+  return {
+    name: PLAN_APPROVAL_TOOL_ID,
+    description: "The approval gate for the oso-code plan mode's phases 1 through 5. Deliver the complete phase-5 document as turn-ending plain text first, then call this tool in a later turn carrying those exact bytes. The operator's answer to the authorization prompt this raises IS the approval: a grant records the approved plan and opens the amendment lane against it, and a refusal comes back as an error approving nothing \u2014 the presentation captured before the prompt stays on disk unpromoted, so this repository is left exactly as unapproved as it was. Nothing this session says or writes can stand in for that answer, and no earlier grant carries over to a later call. When a plan is already held and you pass a changed document, the first call returns the delta the harness computed and changes no plan state. Relay that delta as turn-ending text. Then, once the operator's next message opens a later turn, call again with the identical plan to raise the authorization prompt. The grant binds the digest of the full new document.",
+    input: {
+      type: "object",
+      properties: {
+        plan: {
+          type: "string",
+          description: "The complete phase-5 document, byte for byte as the operator just read it."
+        }
+      },
+      required: ["plan"]
+    },
+    options: DIRECT_CALL,
+    execute: async (input, call) => approveOnOperatorGrant(host, planDocumentOf(input), call)
+  };
+}
+function planCancelTool(host) {
+  return {
+    name: PLAN_CANCEL_TOOL_ID,
+    description: "Abandons the approved plan this repository is executing, at the operator's explicit request and never on your own reading of one. The operator's answer to the authorization prompt this raises IS the abandonment. A grant writes mode=plan, active_slice=none, verify_green=false and plan_approval=cancelled, which closes the edit and commit gates and leaves nothing for the amendment lane to amend; the approved document, the run's own markers and every other state key are left exactly as they stand. Call it only when the operator asks to abandon the plan, never to unstick a denied tool call.",
+    input: { type: "object", properties: {}, required: [] },
+    options: DIRECT_CALL,
+    execute: async (_input, call) => cancelOnOperatorGrant(host, call)
+  };
+}
+async function approveOnOperatorGrant(host, plan, call) {
+  const directory = await host.directoryOf(call.sessionID);
+  const presentation = { host, call, directory, owner: deriveRootId(directory), digest: sha256Hex(plan), plan };
+  const held = heldPlanReadingOf(directory);
+  if (held.kind === "unreadable") return approveTheWholePlan(presentation, held.cause);
+  if (held.kind === "none") return approveTheWholePlan(presentation);
+  if (held.digest === presentation.digest) {
+    return held.approval === "approved" ? alreadyApproved(presentation) : approveTheWholePlan(presentation);
+  }
+  const operatorTurn = await operatorTurnOf(host, call);
+  const presented = presentedPlanOf(directory);
+  if (presented?.digest !== presentation.digest || presented.base !== held.digest) {
+    return presentTheDelta(presentation, held, operatorTurn);
+  }
+  if (presented.turn === operatorTurn) {
+    throw new Error(`${PLAN_APPROVAL_TOOL_ID} returned the delta for this document earlier in this same operator turn. Relay it to the operator as turn-ending plain text, wait for the operator's next message, and only then call again with the identical plan.`);
+  }
+  return supersedeOnOperatorGrant(presentation, held);
+}
+function heldPlanReadingOf(directory) {
+  try {
+    return heldPlanOf(directory);
+  } catch (err) {
+    if (!(err instanceof PlanFailure)) throw err;
+    return { kind: "unreadable", cause: err.message };
+  }
+}
+async function operatorTurnOf(host, call) {
+  const unresolved = (cause) => new Error(`${PLAN_APPROVAL_TOOL_ID} cannot tell which operator message started this turn: ${cause}`);
+  const messages = await host.session.context({ sessionID: call.sessionID }).catch((err) => {
+    throw unresolved(`the host session API failed: ${messageOf2(err)}`);
+  });
+  const calling = messages.findIndex((message) => message.id === call.messageID);
+  if (calling === -1) throw unresolved(`the calling message ${call.messageID} is not in the session`);
+  const operatorMessage = messages.slice(0, calling).filter((message) => message.type === "user").at(-1);
+  if (operatorMessage === void 0) throw unresolved(`no operator message precedes the calling message ${call.messageID}`);
+  return operatorMessage.id;
+}
+async function approveTheWholePlan(presentation, unavailableDelta) {
+  const { host, call, directory, owner, digest, plan } = presentation;
+  refuseReplacingAHeldPlanWhileASliceIsActive(directory, PLAN_APPROVAL_TOOL_ID);
+  runCapturePlan(directory, owner, digest, plan);
+  await askOperator(host, call, PLAN_APPROVAL_TOOL_ID, digest, { digest, characters: plan.length });
+  promoteThePresentedPlan(directory, owner, digest);
+  const granted = `The operator granted ${PLAN_APPROVAL_TOOL_ID} for the plan document whose digest is ${digest}. Execution may begin against that exact document, and the operational plan is amendable under ${owner}.`;
+  const metadata = { digest, owner, session: call.sessionID };
+  if (unavailableDelta === void 0) return { content: granted, metadata };
+  return {
+    content: `The plan delta was unavailable, so the whole plan went to the operator instead: ${unavailableDelta}. Tell the operator the delta was unavailable and why. ${granted}`,
+    metadata: { ...metadata, deltaUnavailable: unavailableDelta }
+  };
+}
+function alreadyApproved({ call, owner, digest }) {
+  return {
+    content: `${PLAN_APPROVAL_TOOL_ID} raised no prompt: the plan document whose digest is ${digest} is already the approved plan, so nothing changed.`,
+    metadata: { digest, owner, session: call.sessionID }
+  };
+}
+async function presentTheDelta(presentation, held, operatorTurn) {
+  const delta = deltaAgainst(held, presentation.plan);
+  recordThePresentation(presentation, operatorTurn);
+  const metadata = { step: "delta", digest: presentation.digest, base: held.digest, ...deltaMetadataOf(delta) };
+  const callAgain = `Then, once the operator's next message opens a LATER turn, call ${PLAN_APPROVAL_TOOL_ID} again with the identical plan bytes. This call changed no plan state, and the held plan whose digest is ${held.digest} stays in force.`;
+  if (delta.kind === "unavailable") {
+    return {
+      content: `${PLAN_APPROVAL_TOOL_ID} raised no prompt: a plan is already held, but the delta could not be computed: ${delta.cause}. The operator already has the whole plan as your own turn-ending text, so tell them the delta was unavailable and why, and that confirming will approve the whole new document. ${callAgain}`,
+      metadata
+    };
+  }
+  return {
+    content: `${PLAN_APPROVAL_TOOL_ID} raised no prompt: a plan is already held, so this call returns the delta the harness computed. Relay the delta below to the operator VERBATIM as turn-ending plain text. ${callAgain}
+
+${delta.text}`,
+    metadata
+  };
+}
+async function supersedeOnOperatorGrant(presentation, held) {
+  const { host, call, directory, owner, digest, plan } = presentation;
+  refuseReplacingAHeldPlanWhileASliceIsActive(directory, PLAN_APPROVAL_TOOL_ID);
+  const delta = deltaAgainst(held, plan);
+  const summary = delta.kind === "computed" ? { summary: delta.summary } : {};
+  await askOperator(host, call, PLAN_APPROVAL_TOOL_ID, digest, {
+    digest,
+    characters: plan.length,
+    base: held.digest,
+    ...deltaMetadataOf(delta),
+    ...summary
+  });
+  supersedeTheHeldPlan(directory, owner, digest);
+  const through = delta.kind === "computed" ? `through the delta whose digest is ${delta.digest}` : `with no delta digest, because the delta could not be computed: ${delta.cause}`;
+  return {
+    content: `The operator granted ${PLAN_APPROVAL_TOOL_ID} for the plan document whose digest is ${digest}, over the base plan whose digest is ${held.digest}, ${through}. The new document superseded the previous plan, whose snapshot stays on disk as history, and the operational plan is amendable under ${owner}. Update the Engram oso/{change}/plan topic with the new document.`,
+    metadata: { digest, owner, session: call.sessionID, base: held.digest, ...deltaMetadataOf(delta) }
+  };
+}
+function deltaAgainst(held, plan) {
+  try {
+    const delta = planDeltaOf({ base: held.document, next: plan, current: held.current });
+    return {
+      kind: "computed",
+      text: renderPlanDelta(delta),
+      digest: planDeltaDigestOf(delta),
+      summary: planDeltaSummaryOf(delta)
+    };
+  } catch (err) {
+    if (!(err instanceof PlanDeltaError)) throw err;
+    return { kind: "unavailable", cause: err.message };
+  }
+}
+function deltaMetadataOf(delta) {
+  return delta.kind === "computed" ? { deltaDigest: delta.digest } : { deltaUnavailable: delta.cause };
+}
+async function cancelOnOperatorGrant(host, call) {
+  const directory = await host.directoryOf(call.sessionID);
+  const owner = deriveRootId(directory);
+  const approved = approvedPlanFor(directory, owner);
+  if (approved.kind !== "approved") {
+    throw new Error(`${PLAN_CANCEL_TOOL_ID} has no approved plan to abandon: ${approved.detail}`);
+  }
+  await askOperator(host, call, PLAN_CANCEL_TOOL_ID, approved.digest, { digest: approved.digest });
+  abandonTheApprovedPlan(directory, owner, approved.digest);
+  return {
+    content: `The operator granted ${PLAN_CANCEL_TOOL_ID} for the approved plan whose digest is ${approved.digest}. Its state now reads plan_approval=cancelled beside the disarmed triple, so no slice is armed, no commit passes the green gate and no amendment lands; the approved document itself is untouched.`,
+    metadata: { digest: approved.digest, session: call.sessionID }
+  };
+}
+function askOperator(host, call, action, digest, metadata) {
+  return host.permission.assert({
+    sessionID: call.sessionID,
+    agent: call.agent,
+    action,
+    resources: [digest],
+    metadata,
+    source: { type: "tool", messageID: call.messageID, id: call.id }
+  });
+}
+function promoteThePresentedPlan(directory, owner, digest) {
+  try {
+    runApprovePlan(directory, owner, digest);
+  } catch (err) {
+    if (!(err instanceof PlanApprovalError) && !(err instanceof PlanFailure)) throw err;
+    throw new Error(`${PLAN_APPROVAL_TOOL_ID} did not record the operator's approval: ${err.message}`);
+  }
+}
+function recordThePresentation({ directory, owner, digest, plan }, operatorTurn) {
+  try {
+    runPresentPlan(directory, owner, digest, plan, operatorTurn);
+  } catch (err) {
+    if (!(err instanceof PlanFailure) && !(err instanceof GatesOwnedElsewhereError)) throw err;
+    throw new Error(`${PLAN_APPROVAL_TOOL_ID} did not present the changed plan: ${err.message}`);
+  }
+}
+function supersedeTheHeldPlan(directory, owner, digest) {
+  try {
+    runSupersedePlan(directory, owner, digest);
+  } catch (err) {
+    if (!(err instanceof PlanFailure) && !(err instanceof GatesOwnedElsewhereError)) throw err;
+    throw new Error(`${PLAN_APPROVAL_TOOL_ID} did not record the operator's approval: ${err.message}`);
+  }
+}
+function abandonTheApprovedPlan(directory, owner, digest) {
+  try {
+    runCancelApprovedPlan(directory, owner, digest);
+  } catch (err) {
+    if (!(err instanceof PlanApprovalError) && !(err instanceof GatesOwnedElsewhereError)) throw err;
+    throw new Error(`${PLAN_CANCEL_TOOL_ID} did not abandon the plan: ${err.message}`);
+  }
+}
+function planDocumentOf(args) {
+  const plan = args?.plan;
+  if (typeof plan !== "string" || plan.trim() === "") {
+    throw new Error(`${PLAN_APPROVAL_TOOL_ID} needs the plan document it is asking the operator to approve`);
+  }
+  return plan;
+}
+
+// opencode/plugin/oso/installed-tree.ts
+import { dirname as dirname2, resolve as resolve2 } from "node:path";
+import { fileURLToPath as fileURLToPath2 } from "node:url";
+function stateBinPath2() {
+  const explicit = process.env.OSO_STATE_BIN;
+  if (explicit !== void 0 && explicit !== "") {
+    return explicit;
+  }
+  return resolve2(dirname2(fileURLToPath2(import.meta.url)), "..", "bin", "oso-state");
+}
+
 // opencode/plugin/oso/gates.ts
 var routes = openCodeRoutes();
 var denyVerdict = (message) => ({
@@ -5126,13 +5585,13 @@ function callerFor(directory) {
 function composeEnvelope(input, output) {
   const cwd = input.cwd ?? process.cwd();
   const args = output.args ?? {};
-  const { filePath, patchText } = args;
+  const { path: targetPath, patchText } = args;
   return hostEnvelope(callerFor(cwd), {
     sessionId: input.sessionID ?? "",
     cwd,
     toolName: input.tool,
     commandLine: commandLineFor(args),
-    filePath: typeof filePath === "string" ? filePath : "",
+    filePath: typeof targetPath === "string" ? targetPath : "",
     patchText: typeof patchText === "string" ? patchText : ""
   });
 }
@@ -5205,6 +5664,18 @@ function runToolGate(route, input, output) {
   }
   return allowVerdict;
 }
+function firstToolGateRefusal(input, output) {
+  for (const route of routes) {
+    if (route.hook !== "execute.before" || !matchesTool(route.matcher, input.tool)) {
+      continue;
+    }
+    const verdict = runToolGate(route, input, output);
+    if (verdict.kind !== "allow") {
+      return verdict.message;
+    }
+  }
+  return void 0;
+}
 function runAdvisoryGate(route, input) {
   const judged = judge(route, composeLifecycleEnvelope(input));
   if (judged.kind === "unusable") {
@@ -5217,7 +5688,7 @@ function runAdvisoryGate(route, input) {
 }
 
 // opencode/plugin/oso/trace.ts
-var TRACE_SINK_ORDER = ["state", "log", "toast"];
+var TRACE_SINK_ORDER = ["state", "log"];
 function recordTrace(input) {
   const severity = input.severity ?? "advisory";
   const results = [];
@@ -5229,11 +5700,7 @@ function recordTrace(input) {
       results.push({ sink, ok });
       continue;
     }
-    if (sink === "log") {
-      results.push({ sink, ok: tryLogSink(input.origin, input.detail, severity, stateSinkBroken) });
-      continue;
-    }
-    results.push({ sink, ok: tryToastSink(input.origin, input.detail, severity, input.client) });
+    results.push({ sink, ok: tryLogSink(input.origin, input.detail, severity, stateSinkBroken) });
   }
   return results;
 }
@@ -5256,57 +5723,24 @@ function tryLogSink(origin, detail, severity, stateSinkBroken) {
     return false;
   }
 }
-function tryToastSink(origin, detail, severity, client) {
-  const showToast = toastFnOf(client);
-  if (showToast === void 0) {
-    return false;
-  }
-  try {
-    const outcome = showToast({
-      body: {
-        title: "oso-code",
-        message: `${origin}: ${detail}`,
-        variant: severity === "enforcement" ? "error" : "warning"
-      }
-    });
-    settleQuietly(outcome);
-    return true;
-  } catch {
-    return false;
-  }
-}
-function settleQuietly(outcome) {
-  if (typeof outcome !== "object" || outcome === null) {
-    return;
-  }
-  const thenable = outcome.catch;
-  if (typeof thenable === "function") {
-    thenable.call(outcome, () => {
-    });
-  }
-}
-function toastFnOf(client) {
-  if (typeof client !== "object" || client === null) {
-    return void 0;
-  }
-  const tui = client.tui;
-  if (typeof tui !== "object" || tui === null) {
-    return void 0;
-  }
-  const showToast = tui.showToast;
-  return typeof showToast === "function" ? showToast : void 0;
-}
 
 // opencode/plugin/oso/continuation-rail.ts
+var ENDING_EVENTS = /* @__PURE__ */ new Set([
+  "session.idle",
+  "session.deleted",
+  "session.execution.failed",
+  "session.execution.interrupted"
+]);
 var childSessions = /* @__PURE__ */ new Map();
 var driving = /* @__PURE__ */ new Set();
 var heldRuns = /* @__PURE__ */ new Map();
 function trackSessionEvent(event, nowMs = Date.now()) {
+  const { sessionID = "", parentID = "" } = event.data ?? {};
   if (event.type === "session.created") {
-    recordLaunchedChild(event.properties, nowMs);
+    recordLaunchedChild(sessionID, parentID, nowMs);
     return;
   }
-  const child = childSessions.get(sessionNamedBy(event));
+  const child = childSessions.get(sessionID);
   if (child === void 0 || child.phase === "completed") {
     return;
   }
@@ -5317,26 +5751,13 @@ function trackSessionEvent(event, nowMs = Date.now()) {
   }
   child.lastActivityMs = nowMs;
 }
-function recordLaunchedChild(properties, nowMs) {
-  const info = properties?.info;
-  const id = info?.id;
-  const parentID = info?.parentID;
-  if (typeof id === "string" && id !== "" && typeof parentID === "string" && parentID !== "") {
-    childSessions.set(id, { parentID, startedMs: nowMs, lastActivityMs: nowMs, phase: "running" });
+function recordLaunchedChild(sessionID, parentID, nowMs) {
+  if (sessionID !== "" && parentID !== "") {
+    childSessions.set(sessionID, { parentID, startedMs: nowMs, lastActivityMs: nowMs, phase: "running" });
   }
-}
-function sessionNamedBy(event) {
-  const named = event.properties;
-  const infoIsTheSession = event.type.startsWith("session.");
-  const id = named?.sessionID ?? named?.part?.sessionID ?? named?.info?.sessionID ?? (infoIsTheSession ? named?.info?.id : void 0);
-  return typeof id === "string" ? id : "";
 }
 function endsTheSession(event) {
-  if (event.type === "session.idle" || event.type === "session.deleted") {
-    return true;
-  }
-  const status = event.properties?.status;
-  return event.type === "session.status" && status?.type === "idle";
+  return ENDING_EVENTS.has(event.type);
 }
 function continueUnattendedRun(request) {
   if (request.sessionID === "" || childSessions.has(request.sessionID)) {
@@ -5346,7 +5767,7 @@ function continueUnattendedRun(request) {
     return Promise.resolve({ kind: "already-driving" });
   }
   driving.add(request.sessionID);
-  return postUntilTheRunStops(request).catch((error) => standDownTraced(request, `the continuation rail failed: ${messageOf2(error)}`, 0)).finally(() => {
+  return postUntilTheRunStops(request).catch((error) => standDownTraced(request, `the continuation rail failed: ${messageOf2(error)}`)).finally(() => {
     driving.delete(request.sessionID);
   });
 }
@@ -5357,30 +5778,27 @@ function releaseHeldRuns() {
   heldRuns.clear();
 }
 async function postUntilTheRunStops(request) {
-  let turns = 0;
-  for (; ; ) {
-    let step;
-    try {
-      step = nextContinuationStep(request);
-    } catch (error) {
-      endHold(request.sessionID);
-      return standDownTraced(request, `the unattended run could not be read: ${messageOf2(error)}`, turns);
-    }
-    if (step.kind === "held") {
-      holdUntilAChildSettles(request, step.children);
-      return { kind: "stood-down", turns };
-    }
+  let step;
+  try {
+    step = nextContinuationStep(request);
+  } catch (error) {
     endHold(request.sessionID);
-    if (step.kind === "stop") {
-      return { kind: "stood-down", turns };
-    }
-    try {
-      await postContinuationTurn(request, step.order);
-    } catch (error) {
-      return standDownTraced(request, `the continuation turn did not land: ${messageOf2(error)}`, turns);
-    }
-    turns += 1;
+    return standDownTraced(request, `the unattended run could not be read: ${messageOf2(error)}`);
   }
+  if (step.kind === "held") {
+    holdUntilAChildSettles(request, step.children);
+    return { kind: "stood-down" };
+  }
+  endHold(request.sessionID);
+  if (step.kind === "stop") {
+    return { kind: "stood-down" };
+  }
+  try {
+    await request.admitTurn(step.order);
+  } catch (error) {
+    return standDownTraced(request, `the continuation turn did not land: ${messageOf2(error)}`);
+  }
+  return { kind: "admitted", order: step.order };
 }
 function nextContinuationStep(request) {
   releaseOverdueChildren(request);
@@ -5457,22 +5875,12 @@ function childSessionsOf(parentID) {
     completed: children.filter(([, child]) => child.phase === "completed").map(([childID]) => childID)
   };
 }
-async function postContinuationTurn(request, order) {
-  const session = request.session;
-  if (session === void 0) {
-    throw new Error("this host handed the plugin no session api to post a continuation turn through");
-  }
-  await unwrap(session.prompt({
-    path: { id: request.sessionID },
-    body: { parts: [{ type: "text", text: order }] }
-  }));
-}
-function standDownTraced(request, reason, turns) {
+function standDownTraced(request, reason) {
   traceRun(request, reason);
-  return { kind: "failed", reason, turns };
+  return { kind: "failed", reason };
 }
 function traceRun(request, detail) {
-  recordTrace({ origin: "auto-continue", detail, severity: "advisory", sessionID: request.sessionID, client: request.client });
+  recordTrace({ origin: "auto-continue", detail, severity: "advisory", sessionID: request.sessionID });
 }
 function nowOf(request) {
   return (request.now ?? Date.now)();
@@ -5579,28 +5987,8 @@ function queueSystemAdvice(pending, sessionId, advice) {
   }
   queued.push(advice);
 }
-function deliverSystemAdvice(output, pending, sessionId) {
-  const queued = pending.get(sessionId);
-  if (queued === void 0 || queued.length === 0) {
-    return { kind: "empty" };
-  }
-  const record = output;
-  if (typeof record !== "object" || record === null || !Array.isArray(record.system)) {
-    return { kind: "undeliverable" };
-  }
-  record.system.push(...queued);
-  return { kind: "delivered", entries: queued.length };
-}
-function deliverCompactionContext(output, anchor) {
-  if (anchor === "") {
-    return { kind: "empty" };
-  }
-  const record = output;
-  if (typeof record !== "object" || record === null || !Array.isArray(record.context)) {
-    return { kind: "undeliverable" };
-  }
-  record.context.push(anchor);
-  return { kind: "delivered", entries: 1 };
+function queuedSystemAdvice(pending, sessionId) {
+  return pending.get(sessionId) ?? [];
 }
 function dropSystemAdvice(pending, sessionId) {
   pending.delete(sessionId);
@@ -5666,47 +6054,49 @@ function dropMarkerQuietly(commonDir, sessionId) {
 
 // opencode/plugin/oso/wave-tool.ts
 var CHILD_BOUND_MS = 30 * 60 * 1e3;
-function waveTool(session) {
+function waveTool(host) {
   return {
+    name: "oso_wave",
     description: "Runs one oso-code wave: every child is an oso-applier or oso-verifier session pinned to its own git worktree of this project, all children are opened before any of them is prompted, each child's turn blocks until it reports, and its status/verdict line is read back in band. A child that cannot be pinned, cannot run, or outlives its bound comes back blocked with the reason and never as a verdict.",
-    args: {
-      children: {
-        type: "array",
-        description: "One entry per wave child. Every worktree must already exist and belong to this project.",
-        items: {
-          type: "object",
-          properties: {
-            worktree: { type: "string", description: "Absolute path of the git worktree the child runs inside." },
-            agent: { type: "string", enum: ["applier", "verifier"], description: "Which oso-code agent the child runs as." },
-            prompt: { type: "string", description: "The full assignment the child receives as its first and only turn." },
-            applier_proof: {
-              type: "string",
-              description: "The applier's proof, scan, and decisions_used report blocks for the slice this child verifies, verbatim and alone \u2014 a verifier child's field, which an applier child offered it comes back blocked for."
-            }
-          },
-          required: ["worktree", "agent", "prompt"]
+    input: {
+      type: "object",
+      properties: {
+        children: {
+          type: "array",
+          description: "One entry per wave child. Every worktree must already exist and belong to this project.",
+          items: {
+            type: "object",
+            properties: {
+              worktree: { type: "string", description: "Absolute path of the git worktree the child runs inside." },
+              agent: { type: "string", enum: ["applier", "verifier"], description: "Which oso-code agent the child runs as." },
+              prompt: { type: "string", description: "The full assignment the child receives as its first and only turn." },
+              applier_proof: {
+                type: "string",
+                description: "The applier's proof, scan, and decisions_used report blocks for the slice this child verifies, verbatim and alone \u2014 a verifier child's field, which an applier child offered it comes back blocked for."
+              }
+            },
+            required: ["worktree", "agent", "prompt"]
+          }
         }
-      }
+      },
+      required: ["children"]
     },
-    execute: async (args, call) => {
-      if (session === void 0) {
-        throw new Error("oso_wave cannot run: this host handed the plugin no session API to open children with");
-      }
-      const projectDirectory = call.directory ?? "";
+    options: DIRECT_CALL,
+    execute: async (input, call) => {
+      const projectDirectory = await host.directoryOf(call.sessionID);
       if (commonDirOf(projectDirectory) === "") {
-        throw new Error(`oso_wave must run inside a git repository, and ${projectDirectory || "the directory the host named"} is not one`);
+        throw new Error(`oso_wave must run inside a git repository, and ${projectDirectory} is not one`);
       }
       const results = await runWave({
-        launches: parseLaunches(args),
-        transport: pinnedSessionTransport(session),
+        launches: parseLaunches(input),
+        transport: pinnedSessionTransport(host.session),
         projectDirectory,
-        parentSessionID: call.sessionID ?? "",
+        parentSessionID: call.sessionID,
         timeoutMs: CHILD_BOUND_MS
       });
       return {
-        title: waveTitle(results),
-        output: results.map(renderChild).join("\n\n"),
-        metadata: { children: results.length, blocked: blockedCount(results) }
+        content: results.map(renderChild).join("\n\n"),
+        metadata: { title: waveTitle(results), children: results.length, blocked: blockedCount(results) }
       };
     }
   };
@@ -5766,69 +6156,23 @@ function verdictSummary(parsed) {
   return lines.length === 0 ? "no verdict line" : lines.join(", ");
 }
 
-// opencode/plugin/oso/workspace.ts
-var WORKSPACE_ADAPTER_TYPE = "oso-code";
-function registerWorkspaceAdapter(input) {
-  const register = registerAdapterFnOf(input.experimentalWorkspace);
-  if (register === void 0) {
-    recordTrace({
-      origin: "workspace.register",
-      detail: `the host exposed no experimental workspace registry, so "${WORKSPACE_ADAPTER_TYPE}" is absent from its adapter list`,
-      severity: "advisory",
-      client: input.client
-    });
-    return;
-  }
-  try {
-    register(WORKSPACE_ADAPTER_TYPE, OSO_WORKSPACE_ADAPTER);
-  } catch (err) {
-    recordTrace({
-      origin: "workspace.register",
-      detail: messageOf2(err),
-      severity: "advisory",
-      client: input.client
-    });
-  }
-}
-var OSO_WORKSPACE_ADAPTER = {
-  name: "oso-code wave",
-  description: "Worktrees for an oso-code wave, created by the oso_wave tool rather than from this dialog",
-  configure() {
-    throw new Error(
-      `the "${WORKSPACE_ADAPTER_TYPE}" adapter is registered for discovery only \u2014 a wave worktree is created by the oso_wave tool, never by the host workspace dialog`
-    );
-  }
-};
-function registerAdapterFnOf(experimentalWorkspace) {
-  if (typeof experimentalWorkspace !== "object" || experimentalWorkspace === null) {
-    return void 0;
-  }
-  const register = experimentalWorkspace.register;
-  return typeof register === "function" ? register : void 0;
-}
-
 // opencode/plugin/oso-code.ts
 var advisedSessions = /* @__PURE__ */ new Set();
 var busSessions = /* @__PURE__ */ new Set();
 var pendingAdvice = /* @__PURE__ */ new Map();
-var reanchoredByCompaction = /* @__PURE__ */ new Set();
 var orphanAdviceValue;
-function orphanWorktreeAdviceOnce(directory, client) {
+function orphanWorktreeAdviceOnce(directory) {
   if (orphanAdviceValue === void 0) {
     try {
       orphanAdviceValue = buildStaleAdvice(listStale(commonDirOf(directory)));
     } catch (err) {
       orphanAdviceValue = "";
-      recordTrace({ origin: "lifecycle.orphan-advice", detail: messageOf2(err), severity: "advisory", client });
+      recordTrace({ origin: "lifecycle.orphan-advice", detail: messageOf2(err), severity: "advisory" });
     }
   }
   return orphanAdviceValue;
 }
-function sessionIdOf(value) {
-  const sessionID = value?.sessionID;
-  return typeof sessionID === "string" ? sessionID : "";
-}
-function runLifecycleGate(gate, input, client) {
+function runLifecycleGate(gate, input) {
   const route = routeForGate(routes, gate);
   if (route === void 0) {
     return "";
@@ -5839,31 +6183,30 @@ function runLifecycleGate(gate, input, client) {
       origin: `gate.${gate}`,
       detail: outcome.detail,
       severity: "advisory",
-      sessionID: input.sessionID,
-      client
+      sessionID: input.sessionID
     });
     return "";
   }
   return outcome.kind === "context" ? outcome.text : "";
 }
-function armSessionAdvice(sessionID, directory, client) {
+function armSessionAdvice(sessionID, directory) {
   if (sessionID === "" || advisedSessions.has(sessionID)) {
     return;
   }
   advisedSessions.add(sessionID);
-  queueSystemAdvice(pendingAdvice, sessionID, orphanWorktreeAdviceOnce(directory, client));
+  queueSystemAdvice(pendingAdvice, sessionID, orphanWorktreeAdviceOnce(directory));
   queueSystemAdvice(
     pendingAdvice,
     sessionID,
-    runLifecycleGate("stale", { sessionID, directory, moment: "startup" }, client)
+    runLifecycleGate("stale", { sessionID, directory, moment: "startup" })
   );
   queueSystemAdvice(
     pendingAdvice,
     sessionID,
-    runLifecycleGate("version", { sessionID, directory, moment: "startup" }, client)
+    runLifecycleGate("version", { sessionID, directory, moment: "startup" })
   );
 }
-function markSessionLive(sessionID, directory, client) {
+function markSessionLive(sessionID, directory) {
   if (sessionID === "") {
     return;
   }
@@ -5873,139 +6216,154 @@ function markSessionLive(sessionID, directory, client) {
       worktrees: []
     });
   } catch (err) {
-    recordTrace({ origin: "session.idle", detail: messageOf2(err), severity: "advisory", sessionID, client });
+    recordTrace({ origin: "experimental.idle", detail: messageOf2(err), severity: "advisory", sessionID });
   }
 }
-var osoCode = async (pluginInput) => {
-  const client = pluginInput?.client;
-  const directory = pluginInput?.directory ?? process.cwd();
-  try {
-    sweepStale(commonDirOf(directory));
-  } catch (err) {
-    recordTrace({ origin: "lifecycle.sweep", detail: messageOf2(err), severity: "advisory", client });
-  }
-  registerWorkspaceAdapter({ experimentalWorkspace: pluginInput?.experimental_workspace, client });
+function checkGateRoutes() {
   try {
     assertGateRoutesCompile(routes);
   } catch (err) {
-    recordTrace({ origin: "gate-routes", detail: messageOf2(err), severity: "enforcement", client });
+    recordTrace({ origin: "gate-routes", detail: messageOf2(err), severity: "enforcement" });
   }
-  return {
-    "tool.execute.before": async (input, output) => {
-      const call = input;
-      const result = output ?? {};
-      for (const route of routes) {
-        if (route.hook !== "tool.execute.before" || !matchesTool(route.matcher, call.tool)) {
-          continue;
+}
+function identityEnvFor(cwd) {
+  return { ...publishIdentity(cwd), OSO_STATE_BIN: stateBinPath2() };
+}
+async function sessionOf(ctx, sessions, sessionID) {
+  const known = sessions.get(sessionID);
+  if (known !== void 0) {
+    return known;
+  }
+  try {
+    const { location, parentID } = await ctx.session.get({ sessionID });
+    const session = { directory: location.directory, primary: parentID === void 0 };
+    sessions.set(sessionID, session);
+    return session;
+  } catch (err) {
+    recordTrace({ origin: "session.directory", detail: messageOf2(err), severity: "advisory", sessionID });
+    return { directory: ctx.location.directory, primary: true };
+  }
+}
+function systemPartOf(text) {
+  return { type: "text", text };
+}
+function sweepStaleWorktrees(directory) {
+  try {
+    sweepStale(commonDirOf(directory));
+  } catch (err) {
+    recordTrace({ origin: "lifecycle.sweep", detail: messageOf2(err), severity: "advisory" });
+  }
+}
+function endSessions(directory) {
+  for (const sessionID of busSessions) {
+    runLifecycleGate("teardown", { sessionID, directory, moment: "end" });
+  }
+  busSessions.clear();
+  releaseHeldRuns();
+  sweepStaleWorktrees(directory);
+}
+function followSessionEvents(ctx) {
+  const closing = new AbortController();
+  void (async () => {
+    try {
+      for await (const event of ctx.event.subscribe({ signal: closing.signal })) {
+        const sessionEvent = event;
+        const sessionID = sessionEvent.data?.sessionID ?? "";
+        if (sessionID !== "") {
+          busSessions.add(sessionID);
         }
-        const verdict = runToolGate(route, call, result);
-        if (verdict.kind !== "allow") {
-          throw new Error(verdict.message);
-        }
+        trackSessionEvent(sessionEvent);
       }
-    },
-    "tool.execute.after": async (input, output) => {
-      captureTaskVerdict(input, output, directory);
-    },
-    "shell.env": async (input, output) => {
-      const sessionID = input?.sessionID;
-      try {
-        const cwd = input?.cwd;
-        const identity = publishIdentity(cwd ?? process.cwd());
-        const target = output ?? {};
-        target.env = {
-          ...target.env ?? {},
-          ...identity,
-          OSO_STATE_BIN: stateBinPath2()
-        };
-        return target;
-      } catch (err) {
-        recordTrace({ origin: "shell.env", detail: messageOf2(err), severity: "advisory", sessionID, client });
-        return output ?? {};
+    } catch (err) {
+      if (!closing.signal.aborted) {
+        recordTrace({ origin: "events.subscribe", detail: messageOf2(err), severity: "advisory" });
       }
-    },
-    event: async (input) => {
-      const event = input?.event;
-      if (event === void 0 || typeof event.type !== "string") {
-        return;
-      }
-      const sessionID = sessionIdOf(event.properties);
-      if (sessionID !== "") {
-        busSessions.add(sessionID);
-      }
-      trackSessionEvent(event);
-      if (event.type === "session.created") {
-        return;
-      }
-      if (event.type === "session.idle") {
-        markSessionLive(sessionID, directory, client);
-        dropSystemAdvice(pendingAdvice, sessionID);
-        continueUnattendedRun({ sessionID, directory, session: client?.session, client });
-        return;
-      }
-      if (event.type === "session.compacted") {
-        if (reanchoredByCompaction.delete(sessionID)) {
-          return;
-        }
-        queueSystemAdvice(
-          pendingAdvice,
-          sessionID,
-          runLifecycleGate("reanchor", { sessionID, directory, moment: "compact" }, client)
-        );
-      }
-    },
-    "experimental.chat.system.transform": async (input, output) => {
-      const sessionID = sessionIdOf(input);
-      try {
-        armSessionAdvice(sessionID, directory, client);
-        const delivery = deliverSystemAdvice(output, pendingAdvice, sessionID);
-        if (delivery.kind === "undeliverable") {
-          recordTrace({
-            origin: "system.transform",
-            detail: "the host handed no system prompt array to append the advisory to",
-            severity: "advisory",
-            sessionID,
-            client
-          });
-        }
-      } catch (err) {
-        recordTrace({ origin: "system.transform", detail: messageOf2(err), severity: "advisory", sessionID, client });
-      }
-    },
-    "experimental.session.compacting": async (input, output) => {
-      const sessionID = sessionIdOf(input);
-      if (sessionID === "") {
-        return;
-      }
-      const anchor = runLifecycleGate("reanchor", { sessionID, directory, moment: "compact" }, client);
-      const delivery = deliverCompactionContext(output, anchor);
-      if (delivery.kind === "delivered") {
-        reanchoredByCompaction.add(sessionID);
-      }
-      if (delivery.kind === "undeliverable") {
-        recordTrace({
-          origin: "session.compacting",
-          detail: "the host handed no compaction context array to append the re-anchor to",
-          severity: "advisory",
-          sessionID,
-          client
-        });
-      }
-    },
-    tool: {
-      oso_wave: waveTool(client?.session),
-      [PLAN_APPROVAL_TOOL_ID]: planApprovalTool(),
-      [PLAN_CANCEL_TOOL_ID]: planCancelTool()
-    },
-    dispose: async () => {
-      for (const sessionID of busSessions) {
-        runLifecycleGate("teardown", { sessionID, directory, moment: "end" }, client);
-      }
-      busSessions.clear();
-      releaseHeldRuns();
     }
+  })();
+  return () => closing.abort();
+}
+async function continueOnIdle(ctx, sessions, sessionID) {
+  const { directory, primary } = await sessionOf(ctx, sessions, sessionID);
+  markSessionLive(sessionID, directory);
+  dropSystemAdvice(pendingAdvice, sessionID);
+  trackSessionEvent({ type: "session.idle", data: { sessionID } });
+  if (primary) {
+    await continueUnattendedRun({
+      sessionID,
+      directory,
+      admitTurn: async (order) => {
+        await ctx.session.prompt({ sessionID, text: order });
+      }
+    });
+  }
+}
+async function setup(ctx) {
+  sweepStaleWorktrees(ctx.location.directory);
+  checkGateRoutes();
+  const sessions = /* @__PURE__ */ new Map();
+  const host = {
+    session: ctx.session,
+    permission: ctx.permission,
+    directoryOf: async (sessionID) => (await sessionOf(ctx, sessions, sessionID)).directory
   };
-};
+  await ctx.tool.transform((editor) => {
+    editor.add(waveTool(host));
+    editor.add(planApprovalTool(host));
+    editor.add(planCancelTool(host));
+  });
+  await ctx.tool.hook("execute.before", async (call) => {
+    const { directory } = await sessionOf(ctx, sessions, call.sessionID);
+    const refusal = firstToolGateRefusal(
+      { tool: call.tool, sessionID: call.sessionID, callID: call.id, cwd: directory },
+      { args: call.input ?? {} }
+    );
+    if (refusal !== void 0) {
+      throw new Error(refusal);
+    }
+  });
+  await ctx.tool.hook("execute.after", async (call) => {
+    captureSubagentVerdict(call, (await sessionOf(ctx, sessions, call.sessionID)).directory);
+  });
+  await ctx.shell.hook("create.before", (creation) => {
+    try {
+      Object.assign(creation.env, identityEnvFor(creation.cwd));
+    } catch (err) {
+      recordTrace({ origin: "create.before", detail: messageOf2(err), severity: "advisory" });
+    }
+  });
+  await ctx.session.hook("experimental.idle", async ({ sessionID }) => {
+    try {
+      await continueOnIdle(ctx, sessions, sessionID);
+    } catch (err) {
+      recordTrace({ origin: "experimental.idle", detail: messageOf2(err), severity: "advisory", sessionID });
+    }
+  });
+  await ctx.session.hook("context", async ({ sessionID, system }) => {
+    try {
+      const { directory, primary } = await sessionOf(ctx, sessions, sessionID);
+      if (!primary) {
+        return;
+      }
+      armSessionAdvice(sessionID, directory);
+      system.push(...queuedSystemAdvice(pendingAdvice, sessionID).map(systemPartOf));
+    } catch (err) {
+      recordTrace({ origin: "context", detail: messageOf2(err), severity: "advisory", sessionID });
+    }
+  });
+  await ctx.session.hook("compaction", async ({ sessionID, system }) => {
+    const { directory } = await sessionOf(ctx, sessions, sessionID);
+    const anchor = runLifecycleGate("reanchor", { sessionID, directory, moment: "compact" });
+    if (anchor !== "") {
+      system.push(systemPartOf(anchor));
+    }
+  });
+  const closeEvents = followSessionEvents(ctx);
+  return () => {
+    closeEvents();
+    endSessions(ctx.location.directory);
+  };
+}
+var oso_code_default = { id: "oso-code", setup };
 export {
-  osoCode
+  oso_code_default as default
 };

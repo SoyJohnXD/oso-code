@@ -7,6 +7,7 @@
     "test": "node --import ../core/test/support/sandbox-env.mjs --test"
   },
   "devDependencies": {
+    "@opencode/plugin": "2.2.6",
     "@types/node": "^24.0.0",
     "typescript": "^5.8.0"
   }

@@ -20,7 +20,7 @@ export const GLOBAL_MARKER_START = "<!-- oso-code:start -->";
 export const GLOBAL_MARKER_END = "<!-- oso-code:end -->";
 
 const AWK_BLANK_LINE = /^[ \t]*$/;
-const REPAIRABLE_NESTED_PATHS = [["permission"], ["permission", "skill"], ["permission", "task"], ["mcp"]] as const;
+const REPAIRABLE_NESTED_PATHS = [["permission"], ["permission", "skill"], ["permission", "subagent"], ["mcp"]] as const;
 
 export type OpenCodePaths = Readonly<{
   homeDirectory: string;

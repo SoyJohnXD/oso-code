@@ -3,10 +3,9 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync }
 import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { sha256Hex } from "@oso-code/core";
-import { osoCode } from "../oso-code.ts";
+import entry from "../oso-code.ts";
+import { fakeHostContext, type FakeHostContext } from "../../test-support/host-context.ts";
 import { seedRailFixture, underRailFixtureHome, type RailFixture } from "../../test-support/rail-fixture.ts";
-
-type LooseHooks = Record<string, (input?: unknown, output?: unknown) => unknown>;
 
 type DriftScene = Readonly<{
   recordedVersion: string;
@@ -77,18 +76,14 @@ async function underDriftEnvironment<T>(fixture: RailFixture, buildVersion: stri
   }
 }
 
-async function systemPromptAfter(fixture: RailFixture, hooks: LooseHooks, sessionID: string, buildVersion: string): Promise<string[]> {
-  const output = { system: [HARNESS_PROMPT] };
-  await underDriftEnvironment(fixture, buildVersion, async () => {
-    await hooks["experimental.chat.system.transform"]!({ sessionID }, output);
-  });
-  return output.system;
+async function systemPromptAfter(fixture: RailFixture, host: FakeHostContext, sessionID: string, buildVersion: string): Promise<string[]> {
+  const output = { sessionID, system: [{ type: "text", text: HARNESS_PROMPT }] };
+  await underDriftEnvironment(fixture, buildVersion, () => host.hook("session", "context")(output));
+  return output.system.map((part) => part.text);
 }
 
-async function sessionIdle(fixture: RailFixture, hooks: LooseHooks, sessionID: string, buildVersion: string): Promise<void> {
-  await underDriftEnvironment(fixture, buildVersion, async () => {
-    await hooks.event!({ event: { type: "session.idle", properties: { sessionID } } });
-  });
+async function sessionIdle(fixture: RailFixture, host: FakeHostContext, sessionID: string, buildVersion: string): Promise<void> {
+  await underDriftEnvironment(fixture, buildVersion, () => host.hook("session", "experimental.idle")({ sessionID, background: [] }));
 }
 
 function tracedEvents(fixture: RailFixture): string {
@@ -96,12 +91,13 @@ function tracedEvents(fixture: RailFixture): string {
   return existsSync(eventsLog) ? readFileSync(eventsLog, "utf8") : "";
 }
 
-async function withScene(label: string, scene: DriftScene | undefined, check: (fixture: RailFixture, hooks: LooseHooks) => Promise<void>): Promise<void> {
+async function withScene(label: string, scene: DriftScene | undefined, check: (fixture: RailFixture, host: FakeHostContext) => Promise<void>): Promise<void> {
   const fixture = seedRailFixture(label);
   try {
     if (scene !== undefined) stageScene(fixture, scene);
-    const hooks = (await osoCode({ directory: fixture.repo })) as unknown as LooseHooks;
-    await check(fixture, hooks);
+    const host = fakeHostContext({ directory: fixture.repo, defaultSessionDirectory: fixture.repo });
+    await entry.setup(host.context);
+    await check(fixture, host);
   } finally {
     rmSync(fixture.base, { recursive: true, force: true });
   }
@@ -109,8 +105,8 @@ async function withScene(label: string, scene: DriftScene | undefined, check: (f
 
 test("an install record whose version differs from the running build tells the session once, naming both and the reinstall", async () => {
   const scene = { ...INTACT_SCENE, recordedVersion: "0.26.4", buildVersion: "0.27.0" };
-  await withScene("oso-drift-version", scene, async (fixture, hooks) => {
-    const system = await systemPromptAfter(fixture, hooks, "ses-drift-version", scene.buildVersion);
+  await withScene("oso-drift-version", scene, async (fixture, host) => {
+    const system = await systemPromptAfter(fixture, host, "ses-drift-version", scene.buildVersion);
     assert.equal(system.length, 2, system.join("\n"));
     assert.match(system[1]!, /0\.26\.4/);
     assert.match(system[1]!, /0\.27\.0/);
@@ -120,8 +116,8 @@ test("an install record whose version differs from the running build tells the s
 
 test("a trusted installed file whose digest left the recorded manifest names the file and the verify and reinstall remedy", async () => {
   const scene = { ...INTACT_SCENE, installedBytes: "tampered bytes\n" };
-  await withScene("oso-drift-files", scene, async (fixture, hooks) => {
-    const system = await systemPromptAfter(fixture, hooks, "ses-drift-files", scene.buildVersion);
+  await withScene("oso-drift-files", scene, async (fixture, host) => {
+    const system = await systemPromptAfter(fixture, host, "ses-drift-files", scene.buildVersion);
     assert.equal(system.length, 2, system.join("\n"));
     assert.match(system[1]!, /plugin\/dist\/gate\.js/);
     assert.match(system[1]!, /oso verify --host opencode/);
@@ -131,8 +127,8 @@ test("a trusted installed file whose digest left the recorded manifest names the
 
 test("an OpenCode CLI older than the supported pin tells the session once", async () => {
   const scene = { ...INTACT_SCENE, cliAnswer: "1.0.0" };
-  await withScene("oso-drift-cli", scene, async (fixture, hooks) => {
-    const system = await systemPromptAfter(fixture, hooks, "ses-drift-cli", scene.buildVersion);
+  await withScene("oso-drift-cli", scene, async (fixture, host) => {
+    const system = await systemPromptAfter(fixture, host, "ses-drift-cli", scene.buildVersion);
     assert.equal(system.length, 2, system.join("\n"));
     assert.match(system[1]!, /OpenCode 1\.0\.0/);
     assert.match(system[1]!, /older than/);
@@ -140,33 +136,33 @@ test("an OpenCode CLI older than the supported pin tells the session once", asyn
 });
 
 test("a newer CLI and an intact install at the running build's version say nothing", async () => {
-  await withScene("oso-drift-intact", INTACT_SCENE, async (fixture, hooks) => {
-    assert.deepEqual(await systemPromptAfter(fixture, hooks, "ses-drift-intact", INTACT_SCENE.buildVersion), [HARNESS_PROMPT]);
+  await withScene("oso-drift-intact", INTACT_SCENE, async (fixture, host) => {
+    assert.deepEqual(await systemPromptAfter(fixture, host, "ses-drift-intact", INTACT_SCENE.buildVersion), [HARNESS_PROMPT]);
   });
 });
 
 test("the drift advice rides the session's first turn only, never a later prompt", async () => {
   const scene = { ...INTACT_SCENE, recordedVersion: "0.26.4" };
-  await withScene("oso-drift-once", scene, async (fixture, hooks) => {
-    const first = await systemPromptAfter(fixture, hooks, "ses-drift-once", scene.buildVersion);
+  await withScene("oso-drift-once", scene, async (fixture, host) => {
+    const first = await systemPromptAfter(fixture, host, "ses-drift-once", scene.buildVersion);
     assert.equal(first.length, 2, first.join("\n"));
-    await sessionIdle(fixture, hooks, "ses-drift-once", scene.buildVersion);
-    assert.deepEqual(await systemPromptAfter(fixture, hooks, "ses-drift-once", scene.buildVersion), [HARNESS_PROMPT]);
+    await sessionIdle(fixture, host, "ses-drift-once", scene.buildVersion);
+    assert.deepEqual(await systemPromptAfter(fixture, host, "ses-drift-once", scene.buildVersion), [HARNESS_PROMPT]);
   });
 });
 
 test("a missing install record gives no advice and leaves a trace", async () => {
-  await withScene("oso-drift-no-record", undefined, async (fixture, hooks) => {
+  await withScene("oso-drift-no-record", undefined, async (fixture, host) => {
     writeFakeOpenCode(fixture, "1.0.0");
-    assert.deepEqual(await systemPromptAfter(fixture, hooks, "ses-drift-no-record", INTACT_SCENE.buildVersion), [HARNESS_PROMPT]);
+    assert.deepEqual(await systemPromptAfter(fixture, host, "ses-drift-no-record", INTACT_SCENE.buildVersion), [HARNESS_PROMPT]);
     assert.match(tracedEvents(fixture), /opencode-install-record-unread/);
   });
 });
 
 test("an unparseable install record gives no advice and leaves a trace carrying the parse failure", async () => {
-  await withScene("oso-drift-bad-record", INTACT_SCENE, async (fixture, hooks) => {
+  await withScene("oso-drift-bad-record", INTACT_SCENE, async (fixture, host) => {
     writeFileSync(installRecordOf(fixture), "{ not json\n");
-    assert.deepEqual(await systemPromptAfter(fixture, hooks, "ses-drift-bad-record", INTACT_SCENE.buildVersion), [HARNESS_PROMPT]);
+    assert.deepEqual(await systemPromptAfter(fixture, host, "ses-drift-bad-record", INTACT_SCENE.buildVersion), [HARNESS_PROMPT]);
     assert.match(tracedEvents(fixture), /opencode-install-record-unread/);
     assert.match(tracedEvents(fixture), /cannot parse JSON/);
   });
@@ -174,8 +170,8 @@ test("an unparseable install record gives no advice and leaves a trace carrying 
 
 test("a CLI probe that answers no version gives no advice and leaves a trace", async () => {
   const scene = { ...INTACT_SCENE, cliAnswer: "not a version" };
-  await withScene("oso-drift-bad-probe", scene, async (fixture, hooks) => {
-    assert.deepEqual(await systemPromptAfter(fixture, hooks, "ses-drift-bad-probe", scene.buildVersion), [HARNESS_PROMPT]);
+  await withScene("oso-drift-bad-probe", scene, async (fixture, host) => {
+    assert.deepEqual(await systemPromptAfter(fixture, host, "ses-drift-bad-probe", scene.buildVersion), [HARNESS_PROMPT]);
     assert.match(tracedEvents(fixture), /opencode-cli-unprobed/);
   });
 });

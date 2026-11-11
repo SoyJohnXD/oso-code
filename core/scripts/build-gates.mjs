@@ -11,8 +11,6 @@ const hashFile = join(repoRoot, "bootstrap", "hook-hashes.txt");
 const installLayoutModule = join(repoRoot, "core", "src", "install", "opencode-install-layout.ts");
 const publishedRow = /^([0-9a-f]{64})( {2})(\S.*)$/;
 
-const OPENCODE_HOST_PACKAGE = "@opencode-ai/plugin";
-
 function bundlesOf(render, routes, harnessVersion) {
   const spawned = [
     { source: "gate.ts", bundle: render.GATE_BUNDLE },
@@ -31,7 +29,7 @@ function bundlesOf(render, routes, harnessVersion) {
       entryPoint: join(repoRoot, ...render.OPENCODE_PLUGIN_ENTRY.split("/")),
       path: join(repoRoot, opencodeBundle),
       name: opencodeBundle,
-      external: [OPENCODE_HOST_PACKAGE],
+      external: [],
       define: { "process.env.OSO_HARNESS_BUILD_VERSION": JSON.stringify(harnessVersion) },
     },
   ];

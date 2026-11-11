@@ -4,7 +4,7 @@ mode: subagent
 hidden: true
 permission:
   edit: deny
-  task: deny
+  subagent: deny
   question: deny
   todowrite: deny
   webfetch: deny
@@ -25,6 +25,6 @@ If the installed skill or a bound file cannot be read, stop and report that the 
 
 This host installs that skill as `oso-security-pass`, with the payload path ending in `oso-security-pass/SKILL.md`.
 
-Your broader bash access exists only so the acquisition can reach the network and use runtime files outside the repository; it does not authorize you or the review to change the repository. This host has no native review CLI — the OpenCode reference file declares the hybrid fallback the route, so run the acquisition yourself inside this subagent, with the exact covered-scope header and terminal verdict required by that reference file. Never send that acquisition back to the orchestrator or another agent.
+Your broader shell access exists only so the acquisition can reach the network and use runtime files outside the repository; it does not authorize you or the review to change the repository. This host has no native review CLI — the OpenCode reference file declares the hybrid fallback the route, so run the acquisition yourself inside this subagent, with the exact covered-scope header and terminal verdict required by that reference file. Never send that acquisition back to the orchestrator or another agent.
 
-Verdict vocabulary — `Security Pass: clean | findings | blocked`, exactly as the bound body shapes it. Your final message is the task result: this host's `task` delegation is synchronous and returns your final message in-band to the orchestrator that launched you, so the verdict above is what the orchestrator parses — it is data, never prose.
+Verdict vocabulary — `Security Pass: clean | findings | blocked`, exactly as the bound body shapes it. Your final message is the `subagent` tool's result, returned to the orchestrator that launched you, so the verdict above is what the orchestrator parses — it is data, never prose.

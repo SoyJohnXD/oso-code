@@ -2,11 +2,11 @@
 
 ## The delivery contract
 
-No swallow is known on this host, and this port has not probed for one. So the discipline stands unchanged rather than relaxed: operator-facing content — the triage report, the diagnosis presentation — ENDS the turn as plain text, with any tool call in a LATER turn. An extra turn is the cheap side of that bet; content the operator never sees is the expensive one.
+Operator-facing content the operator must answer or approve — the triage report, the diagnosis presentation — ENDS the turn as plain text, with any tool call in a LATER turn. Milestone reports are the exception: `../_shared/references/opencode.md`'s **Milestones ride the stream, and the record that carries them** lets each continue in the same turn with the next tool call.
 
 ## Making a launch wait
 
-No launch on this host outlives the turn that made it: the `task` tool is SYNCHRONOUS — the call blocks until the child turn completes and the child's own final message comes back in-band (D5) — and there is no wait operation and no handoff receipt rail beside it, so that returned message is the whole of the handoff. Read it before any step that depends on it; the delegated fix this flow launches is exactly such a step. A launch that errors, times out or returns an empty verdict BLOCKS this flow and never falls through, and no wait marker is armed here because nothing this flow launches reports in a later turn.
+The child's own final message is the `subagent` tool's result, and that returned message is the whole of the handoff. Read it before any step that depends on it; the delegated fix this flow launches is exactly such a step. A launch that errors, times out or returns an empty verdict BLOCKS this flow and never falls through.
 
 ## Shared-file paths
 
@@ -14,9 +14,9 @@ Wherever the neutral body names a file as `_shared/<file>.md`, it is spelled `..
 
 ## The state command
 
-`OSO_STATE_BIN` reaches every tool subprocess on this host through the installed plugin's `shell.env` hook — which fires per shell invocation and whose `output.env` values ARE present in the tool process environment. So `oso-state` is spelled `"${OSO_STATE_BIN:-oso-state}"` here.
+`OSO_STATE_BIN` and `OSO_AGENT` reach every shell command on this host through the installed plugin's `shell.create.before` hook, whose env mutation reaches the spawned command. So `oso-state` is spelled `"${OSO_STATE_BIN:-oso-state}"` here.
 
-This host publishes the ROOT session id through `shell.env` for tool subprocesses (D13); that value is what `OSO_AGENT` carries, and it is never exported into the server process itself. Spell every state call as `"${OSO_STATE_BIN:-oso-state}" --session "${OSO_AGENT}" <verb> …`.
+The installed plugin publishes `OSO_AGENT`, a repository-derived identity computed from the shell's cwd, not a host session id. Spell every state call as `"${OSO_STATE_BIN:-oso-state}" --session "${OSO_AGENT}" <verb> …`. In a folder holding several repositories, run every `oso-state` call from the session's own directory, never with a workdir inside one of the repositories: state and `OSO_AGENT` key on the directory the call runs in.
 
 ## Naming and invoking the harness's own skills
 
@@ -31,7 +31,7 @@ Forked judges and operational agents are the exception to inline reading: launch
 
 ## The explorer
 
-§4's diagnosis agent is this host's `explore` subagent type, launched through the `task` tool.
+§4's diagnosis agent is launched through the `subagent` tool with a read-only agent.
 
 ## Front-surface binding
 
@@ -39,4 +39,4 @@ When `../_shared/front-surface.md`'s trigger fires, READ `../_shared/references/
 
 ## Reporting binding
 
-READ `../_shared/references/opencode.md`'s **Native agent files, no card** and **The unattended run — no carve-out here, and the record that carries it instead** sections NOW. It is the single OpenCode binding for what this host's own UI shows, and does not show, when the milestone contract at `../_shared/reporting.md` fires.
+READ `../_shared/references/opencode.md`'s **Native agent files, no card** and **Milestones ride the stream, and the record that carries them** sections NOW. It is the single OpenCode binding for what this host's own UI shows, and does not show, when the milestone contract at `../_shared/reporting.md` fires.

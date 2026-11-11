@@ -2,7 +2,7 @@
 
 ## The delivery contract
 
-The adapter makes no claim about whether OpenCode preserves operator-facing text before a same-turn tool call, and the harness depends on no such behavior. It applies the conservative host-independent policy: operator-facing content ENDS the turn as plain text, with any tool call in a LATER turn. An extra turn is the cheap side of that boundary; content the operator never sees is the expensive one.
+Operator-facing content the operator must answer or approve ENDS the turn as plain text, with any tool call in a LATER turn. Milestone reports are the exception: `../_shared/references/opencode.md`'s **Milestones ride the stream, and the record that carries them** lets each continue in the same turn with the next tool call.
 
 ## Question rounds
 
@@ -14,9 +14,9 @@ Wherever the neutral body names a file as `_shared/<file>.md`, it is spelled `..
 
 ## The state command
 
-`OSO_STATE_BIN` reaches every tool subprocess on this host through the installed plugin's `shell.env` hook — which fires per shell invocation and whose `output.env` values ARE present in the tool process environment. So `oso-state` is spelled `"${OSO_STATE_BIN:-oso-state}"` here.
+`OSO_STATE_BIN` and `OSO_AGENT` reach every shell command on this host through the installed plugin's `shell.create.before` hook, whose env mutation reaches the spawned command. So `oso-state` is spelled `"${OSO_STATE_BIN:-oso-state}"` here.
 
-This host publishes the ROOT session id through `shell.env` for tool subprocesses (D13); that value is what `OSO_AGENT` carries, and it is never exported into the server process itself. Spell every state call as `"${OSO_STATE_BIN:-oso-state}" --session "${OSO_AGENT}" <verb> …`.
+The installed plugin publishes `OSO_AGENT`, a repository-derived identity computed from the shell's cwd, not a host session id. Spell every state call as `"${OSO_STATE_BIN:-oso-state}" --session "${OSO_AGENT}" <verb> …`. In a folder holding several repositories, run every `oso-state` call from the session's own directory, never with a workdir inside one of the repositories: state and `OSO_AGENT` key on the directory the call runs in.
 
 ## Naming and invoking the harness's own skills
 
@@ -28,7 +28,7 @@ Installed plugin skills carry NO namespace on this host: every skill auto-regist
 | the DEBUG mode | `/oso-debug` | the operator invokes `/oso-debug` — a mode is never model-invoked |
 | the quality-pass judge | `/oso-quality-pass` | read its installed `SKILL.md` and run it inline, the way it runs on every host |
 
-Forked judges and operational agents are the exception to inline reading. This host's `task` tool is SYNCHRONOUS — its call blocks until the child turn completes and the verdict is in-band (D5). There is no wait operation and no handoff receipt rail on this host (D5); a launch that errors, times out, or returns an empty verdict blocks the flow and never falls through. Launch the judge adapters by their `opencode/agents/` contracts, passing SKILL PATH and ARGUMENTS in the payload (D10).
+Forked judges and operational agents are the exception to inline reading. The child's final message is the `subagent` tool's result, and a launch that errors, times out, or returns an empty verdict blocks the flow and never falls through. Launch the judge adapters by their `opencode/agents/` contracts, passing SKILL PATH and ARGUMENTS in the payload (D10).
 
 ## Front-surface binding
 
@@ -36,4 +36,4 @@ When `../_shared/front-surface.md`'s trigger fires, READ `../_shared/references/
 
 ## Reporting binding
 
-READ `../_shared/references/opencode.md`'s **Native agent files, no card** and **The unattended run — no carve-out here, and the record that carries it instead** sections NOW. It is the single OpenCode binding for what this host's own UI shows, and does not show, when the milestone contract at `../_shared/reporting.md` fires.
+READ `../_shared/references/opencode.md`'s **Native agent files, no card** and **Milestones ride the stream, and the record that carries them** sections NOW. It is the single OpenCode binding for what this host's own UI shows, and does not show, when the milestone contract at `../_shared/reporting.md` fires.

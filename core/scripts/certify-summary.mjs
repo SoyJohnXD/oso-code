@@ -2,17 +2,22 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 
 export const CERTIFY_SUITE_HOSTS = {
-  "opencode-contract-bar": "opencode",
-  "opencode-behavior-bar": "opencode",
-  "opencode-wave-runner-smoke": "opencode",
+  "opencode-v2-host-spike": "opencode",
+  "opencode-v2-plugin-load": "opencode",
+  "opencode-v2-gates-engage": "opencode",
+  "opencode-v2-tools": "opencode",
+  "opencode-v2-lifecycle": "opencode",
+  "opencode-v2-agent-permissions": "opencode",
+  "opencode-v2-plan-delta": "opencode",
 };
 
 const REGISTERED_ROW_COUNT_PATTERN = /^ok \d+ - at least (\d+) row\(s\)/m;
+const LEAF_TEST_PATTERN = /type: 'test'/g;
 const NOT_RUN_LINE_PATTERN = /^\s*(?:not )?ok \d+ - (.+) # SKIP (not-run:.*)$/;
 
 export function parseCertifySuiteTap(tapText) {
   const registeredMatch = tapText.match(REGISTERED_ROW_COUNT_PATTERN);
-  const registered = registeredMatch === null ? 0 : Number(registeredMatch[1]);
+  const registered = registeredMatch === null ? (tapText.match(LEAF_TEST_PATTERN) ?? []).length : Number(registeredMatch[1]);
   const notRun = tapText
     .split("\n")
     .map((line) => line.match(NOT_RUN_LINE_PATTERN))

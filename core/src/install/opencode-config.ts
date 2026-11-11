@@ -6,8 +6,8 @@ export const CONTEXT7_MCP_URL = "https://mcp.context7.com/mcp";
 
 export const OWNED_SKILL_MODES = ["oso-plan", "oso-quick", "oso-debug", "oso-roadmap"] as const;
 export const OWNED_SKILL_VERDICT = "deny";
-export const OWNED_TASK_PATTERN = "*";
-export const OWNED_TASK_VERDICT = "allow";
+const OWNED_SUBAGENT_PATTERN = "*";
+const OWNED_SUBAGENT_VERDICT = "allow";
 
 export const HARNESS_EXTERNAL_DIRECTORIES = ["~/.config/opencode/skill/**", "~/.local/share/opencode/worktree/**"] as const;
 export const HARNESS_EXTERNAL_DIRECTORY_VERDICT = "allow";
@@ -76,7 +76,7 @@ const PLUGIN_KEY = "plugin";
 const PERMISSION_KEY = "permission";
 const MCP_KEY = "mcp";
 const SKILL_KEY = "skill";
-const TASK_KEY = "task";
+const SUBAGENT_KEY = "subagent";
 const EXTERNAL_DIRECTORY_KEY = "external_directory";
 const EDIT_KEY = "edit";
 const DOOM_LOOP_KEY = "doom_loop";
@@ -172,16 +172,16 @@ export function mergeOpenCodeConfig(existing: unknown, fallowCommand: string, pr
   createPluginArrayIfAbsent(document);
 
   const permission = ownedContainer(document, PERMISSION_KEY);
-  const ownedPermissionContainers: readonly string[] = [SKILL_KEY, TASK_KEY, EXTERNAL_DIRECTORY_KEY, EDIT_KEY];
+  const ownedPermissionContainers: readonly string[] = [SKILL_KEY, SUBAGENT_KEY, EXTERNAL_DIRECTORY_KEY, EDIT_KEY];
   preservedKeys.push(...foreignKeysOf(permission, [PERMISSION_KEY], (name) => name in OWNED_PERMISSION_VALUES || ownedPermissionContainers.includes(name)));
 
   const skills = ownedContainer(permission, SKILL_KEY);
   preservedKeys.push(...foreignKeysOf(skills, [PERMISSION_KEY, SKILL_KEY], (name) => (OWNED_SKILL_MODES as readonly string[]).includes(name)));
   for (const mode of OWNED_SKILL_MODES) skills[mode] = OWNED_SKILL_VERDICT;
 
-  const delegations = ownedContainer(permission, TASK_KEY);
-  preservedKeys.push(...foreignKeysOf(delegations, [PERMISSION_KEY, TASK_KEY], (pattern) => pattern === OWNED_TASK_PATTERN));
-  delegations[OWNED_TASK_PATTERN] = OWNED_TASK_VERDICT;
+  const delegations = ownedContainer(permission, SUBAGENT_KEY);
+  preservedKeys.push(...foreignKeysOf(delegations, [PERMISSION_KEY, SUBAGENT_KEY], (pattern) => pattern === OWNED_SUBAGENT_PATTERN));
+  delegations[OWNED_SUBAGENT_PATTERN] = OWNED_SUBAGENT_VERDICT;
 
   const externalDirectories = ownedContainer(permission, EXTERNAL_DIRECTORY_KEY);
   const harnessDirectories = HARNESS_EXTERNAL_DIRECTORIES as readonly string[];

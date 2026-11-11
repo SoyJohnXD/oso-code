@@ -217,6 +217,7 @@ describe("the local-check rows this half owns are named, and every other row is 
       "owned MCP servers closed on every installed agent",
       "mode commands installed and routed",
       "plugin entry, modules and routes installed",
+      "installed plugin loads on the host",
       "Engram plugin file installed",
       "installer-owned targets recorded",
       "published gate bytes as installed",

@@ -13,6 +13,7 @@ import {
 } from "../shell/lexed-command.ts";
 import { lexShellCommands, type LexRecord } from "../shell/lexer.ts";
 import { lineVerdict, type LexerVerdict } from "../shell/line-verdict.ts";
+import { toolNamesFor } from "../routes/routes.ts";
 import { denyPatternsFileFor, readFileIfPresent, stateFileFor } from "../state/store.ts";
 import {
   allowedWithResidueCounted,
@@ -49,6 +50,7 @@ const PUSH_OPTIONS_SENDING_MORE_THAN_ITS_REFSPECS = new Set([
 const FOLLOW_TAGS_CONFIG = /push\.followtags/i;
 const GIT_CONFIG_VARIABLE = /^GIT_CONFIG_[A-Za-z0-9_]*(=|$)/;
 const TAKE_THE_RUN_BACK = "set auto=done";
+const SHELL_TOOL_NAMES = [...toolNamesFor("claude", "proddeploy"), ...toolNamesFor("opencode", "proddeploy")];
 
 export const PROD_DEPLOY_GATE: GateDefinition = {
   gate: "proddeploy",
@@ -68,7 +70,7 @@ function judgeProductionBoundary({ envelope }: GateRequest): GateOutcome {
   if (envelope.toolName.includes("deploy")) {
     return denyProductionBoundary(boundary, mcpDeployStaysWithTheOperator(session), envelope.toolName);
   }
-  if (envelope.toolName !== "Bash" && envelope.toolName !== "bash") return ALLOWED;
+  if (!SHELL_TOOL_NAMES.includes(envelope.toolName)) return ALLOWED;
   return judgeAgainstDenyPatterns(boundary, envelope.commandLine);
 }
 

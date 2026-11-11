@@ -8,16 +8,16 @@ import {
   DELEGATIONS_RETURN_IN_TURN_HOST,
   PUSHES_WITHOUT_PROGRESS_CAP,
 } from "@oso-code/core";
-import { osoCode } from "../oso-code.ts";
+import entry from "../oso-code.ts";
+import { fakeHostContext, type FakeHostContext } from "../../test-support/host-context.ts";
 import {
   continueUnattendedRun,
   trackSessionEvent,
   type ContinuationOutcome,
-  type SessionEvent,
+  type ContinuationRequest,
 } from "./continuation-rail.ts";
 import { seedRailFixture, underRailFixtureHome, type RailFixture } from "../../test-support/rail-fixture.ts";
 import { armStateUnder, underFixtureHome } from "../../test-support/state-fixture.ts";
-import type { HostSessionApi } from "./wave.ts";
 
 const CONTINUATION_ORDER = DELEGATIONS_RETURN_IN_TURN_HOST.order;
 const CAP_MILESTONE = "auto-continue: cap reached after";
@@ -25,12 +25,14 @@ const CAP_MILESTONE = "auto-continue: cap reached after";
 const PRODUCTION_DEPLOY = "vercel --prod";
 const RUN_CHANGE = "slice-twelve";
 
-type LooseHooks = Record<string, (input?: unknown, output?: unknown) => unknown>;
-
 interface PostedTurns {
-  session: HostSessionApi;
   orders: string[];
   sessionIDs: string[];
+  eachTurn: (turn: number) => Promise<void> | void;
+}
+
+function launchedAmidstTheRun(childID: string, parentID: string): void {
+  trackSessionEvent({ type: "session.created", data: { sessionID: childID, parentID } });
 }
 
 function makeFixture(): RailFixture {
@@ -47,26 +49,31 @@ function journalOf(fixture: RailFixture): string {
 }
 
 function postedTurns(eachTurn: (turn: number) => Promise<void> | void = () => {}): PostedTurns {
-  const orders: string[] = [];
-  const sessionIDs: string[] = [];
-  const session: HostSessionApi = {
-    create: async () => ({ data: { id: "ses-unused", directory: "" } }),
-    prompt: async (options) => {
-      sessionIDs.push(options.path.id);
-      orders.push(options.body.parts.map((part) => part.text).join("\n"));
-      await eachTurn(orders.length);
-      return { data: { parts: [{ type: "text", text: "status: done" }] } };
-    },
-    abort: async () => ({ data: true }),
+  return { orders: [], sessionIDs: [], eachTurn };
+}
+
+function admitInto(host: PostedTurns, sessionID: string): ContinuationRequest["admitTurn"] {
+  return async (order) => {
+    host.sessionIDs.push(sessionID);
+    host.orders.push(order);
+    await host.eachTurn(host.orders.length);
   };
-  return { session, orders, sessionIDs };
+}
+
+async function driveUntilStood(request: ContinuationRequest): Promise<ContinuationOutcome> {
+  for (;;) {
+    const outcome = await continueUnattendedRun(request);
+    if (outcome.kind !== "admitted") {
+      return outcome;
+    }
+  }
 }
 
 function idle(fixture: RailFixture, host: PostedTurns, sessionID: string): Promise<ContinuationOutcome> {
-  return underRailFixtureHome(fixture, () => continueUnattendedRun({
+  return underRailFixtureHome(fixture, () => driveUntilStood({
     sessionID,
     directory: fixture.repo,
-    session: host.session,
+    admitTurn: admitInto(host, sessionID),
   }));
 }
 
@@ -103,7 +110,7 @@ test("the pushes a stalled run gets are capped, and the cap says so in the journ
     armRun(fixture, ["auto=running"]);
     const host = postedTurns();
     const first = await idle(fixture, host, "ses-root");
-    assert.equal(first.kind === "stood-down" ? first.turns : -1, PUSHES_WITHOUT_PROGRESS_CAP);
+    assert.equal(first.kind, "stood-down");
     assert.equal(host.orders.length, PUSHES_WITHOUT_PROGRESS_CAP);
     const journalAfterCap = journalOf(fixture);
     assert.match(journalAfterCap, new RegExp(escapeForPattern(CAP_MILESTONE)));
@@ -141,7 +148,7 @@ test("a wave child's idle is never mistaken for the run's own turn ending", asyn
   const fixture = makeFixture();
   try {
     armRun(fixture, ["auto=running"]);
-    trackSessionEvent({ type: "session.created", properties: { info: { id: "ses-child", parentID: "ses-wave-root" } } });
+    trackSessionEvent({ type: "session.created", data: { sessionID: "ses-child", parentID: "ses-wave-root" } });
     const host = postedTurns();
     const outcome = await idle(fixture, host, "ses-child");
     assert.deepEqual(outcome, { kind: "not-this-runs-session" });
@@ -170,10 +177,9 @@ test("a child session the run launched and that is still running holds the run's
   try {
     armRun(fixture, ["auto=running"]);
     const host = postedTurns();
-    const hooks = await pluginOver(fixture, host);
-    await announced(fixture, hooks, "session.created", { info: { id: "ses-held-child", parentID: "ses-held-root" } });
+    launchedAmidstTheRun("ses-held-child", "ses-held-root");
     const outcome = await idle(fixture, host, "ses-held-root");
-    assert.deepEqual(outcome, { kind: "stood-down", turns: 0 });
+    assert.deepEqual(outcome, { kind: "stood-down" });
     assert.deepEqual(host.orders, []);
   } finally {
     rmSync(fixture.base, { recursive: true, force: true });
@@ -185,14 +191,22 @@ test("a child completing re-drives the held run, and a later child completing re
   try {
     armRun(fixture, ["auto=running"]);
     const host = postedTurns();
-    const hooks = await pluginOver(fixture, host);
-    await announced(fixture, hooks, "session.created", { info: { id: "ses-done-child", parentID: "ses-done-root" } });
+    launchedAmidstTheRun("ses-done-child", "ses-done-root");
     await idle(fixture, host, "ses-done-root");
-    await settledAfter(fixture, () => hooks.event!({ event: { type: "session.idle", properties: { sessionID: "ses-done-child" } } }));
+    assert.deepEqual(host.orders, []);
+    await underRailFixtureHome(fixture, async () => {
+      trackSessionEvent({ type: "session.idle", data: { sessionID: "ses-done-child" } });
+      await yieldUntilRailReachesItsCap();
+    });
+    assert.deepEqual(host.orders, [CONTINUATION_ORDER], "the completed child re-drives the run held on it, once");
+
+    await idle(fixture, host, "ses-done-root");
     assert.equal(host.orders.length, PUSHES_WITHOUT_PROGRESS_CAP);
 
-    await announced(fixture, hooks, "session.created", { info: { id: "ses-later-child", parentID: "ses-done-root" } });
-    await announced(fixture, hooks, "session.deleted", { sessionID: "ses-later-child", info: { id: "ses-later-child" } });
+    launchedAmidstTheRun("ses-later-child", "ses-done-root");
+    await underRailFixtureHome(fixture, async () => {
+      trackSessionEvent({ type: "session.deleted", data: { sessionID: "ses-later-child" } });
+    });
     await idle(fixture, host, "ses-done-root");
     assert.equal(host.orders.length, 2 * PUSHES_WITHOUT_PROGRESS_CAP, "the completed child is progress past the cap");
   } finally {
@@ -220,20 +234,18 @@ const MINUTE_MS = 60_000;
 const CHILD_LAUNCHED_AT_MS = Date.parse("2026-09-29T08:00:00Z");
 
 interface StreamedAdvisories {
-  client: { tui: { showToast: (toast: unknown) => void } };
   messages: string[];
 }
 
+const loggedLines: string[] = [];
+
+console.error = (...args: unknown[]) => {
+  loggedLines.push(args.map(String).join(" "));
+};
+
 function streamedAdvisories(): StreamedAdvisories {
-  const messages: string[] = [];
-  const client = {
-    tui: {
-      showToast: (toast: unknown) => {
-        messages.push((toast as { body: { message: string } }).body.message);
-      },
-    },
-  };
-  return { client, messages };
+  loggedLines.length = 0;
+  return { messages: loggedLines };
 }
 
 function idleAt(
@@ -241,19 +253,17 @@ function idleAt(
   host: PostedTurns,
   sessionID: string,
   minutesAfterLaunch: number,
-  advisories: StreamedAdvisories,
 ): Promise<ContinuationOutcome> {
-  return underRailFixtureHome(fixture, () => continueUnattendedRun({
+  return underRailFixtureHome(fixture, () => driveUntilStood({
     sessionID,
     directory: fixture.repo,
-    session: host.session,
-    client: advisories.client,
+    admitTurn: admitInto(host, sessionID),
     now: () => CHILD_LAUNCHED_AT_MS + minutesAfterLaunch * MINUTE_MS,
   }));
 }
 
 function launchedChild(childID: string, parentID: string): void {
-  trackSessionEvent({ type: "session.created", properties: { info: { id: childID, parentID } } }, CHILD_LAUNCHED_AT_MS);
+  trackSessionEvent({ type: "session.created", data: { sessionID: childID, parentID } }, CHILD_LAUNCHED_AT_MS);
 }
 
 test("a child silent past the silence threshold is reported by its session id and released from the hold", async () => {
@@ -264,18 +274,18 @@ test("a child silent past the silence threshold is reported by its session id an
     const advisories = streamedAdvisories();
     launchedChild("ses-silent-child", "ses-silent-root");
 
-    const held = await idleAt(fixture, host, "ses-silent-root", 59, advisories);
-    assert.deepEqual(held, { kind: "stood-down", turns: 0 });
+    const held = await idleAt(fixture, host, "ses-silent-root", 59);
+    assert.deepEqual(held, { kind: "stood-down" });
     assert.equal(advisories.messages.length, 1);
     assert.match(advisories.messages[0] ?? "", /held while child sessions run: ses-silent-child/);
 
-    const released = await idleAt(fixture, host, "ses-silent-root", 61, advisories);
-    assert.deepEqual(released, { kind: "stood-down", turns: PUSHES_WITHOUT_PROGRESS_CAP });
+    const released = await idleAt(fixture, host, "ses-silent-root", 61);
+    assert.deepEqual(released, { kind: "stood-down" });
     assert.equal(advisories.messages.length, 2);
     assert.match(advisories.messages[1] ?? "", /ses-silent-child stuck: silent 61 min/);
     assert.match(journalOf(fixture), /ses-silent-child stuck: silent 61 min/);
 
-    await idleAt(fixture, host, "ses-silent-root", 62, advisories);
+    await idleAt(fixture, host, "ses-silent-root", 62);
     assert.equal(advisories.messages.length, 2, "a child is reported once");
   } finally {
     rmSync(fixture.base, { recursive: true, force: true });
@@ -290,37 +300,17 @@ test("a child still active but in flight past the ceiling is reported as long-ru
     const advisories = streamedAdvisories();
     launchedChild("ses-long-child", "ses-long-root");
     trackSessionEvent(
-      { type: "session.status", properties: { sessionID: "ses-long-child", status: { type: "busy" } } },
+      { type: "session.status", data: { sessionID: "ses-long-child" } },
       CHILD_LAUNCHED_AT_MS + 170 * MINUTE_MS,
     );
 
-    const held = await idleAt(fixture, host, "ses-long-root", 179, advisories);
-    assert.deepEqual(held, { kind: "stood-down", turns: 0 });
+    const held = await idleAt(fixture, host, "ses-long-root", 179);
+    assert.deepEqual(held, { kind: "stood-down" });
 
-    const released = await idleAt(fixture, host, "ses-long-root", 181, advisories);
-    assert.deepEqual(released, { kind: "stood-down", turns: PUSHES_WITHOUT_PROGRESS_CAP });
+    const released = await idleAt(fixture, host, "ses-long-root", 181);
+    assert.deepEqual(released, { kind: "stood-down" });
     assert.match(advisories.messages[1] ?? "", /ses-long-child long-running: in flight 181 min/);
     assert.match(journalOf(fixture), /ses-long-child long-running: in flight 181 min/);
-  } finally {
-    rmSync(fixture.base, { recursive: true, force: true });
-  }
-});
-
-test("a held run is re-driven by its child completing through the plugin's own event hook, with no further idle of the run", async () => {
-  const fixture = makeFixture();
-  try {
-    armRun(fixture, ["auto=running"]);
-    const host = postedTurns();
-    const advisories = streamedAdvisories();
-    const hooks = await pluginOver(fixture, host, advisories);
-    await announced(fixture, hooks, "session.created", { info: { id: "ses-woken-child", parentID: "ses-woken-root" } });
-    await settledAfter(fixture, () => hooks.event!({ event: { type: "session.idle", properties: { sessionID: "ses-woken-root" } } }));
-    assert.deepEqual(host.orders, []);
-    assert.match(advisories.messages.join("\n"), /held while child sessions run: ses-woken-child/);
-
-    await settledAfter(fixture, () => hooks.event!({ event: { type: "session.idle", properties: { sessionID: "ses-woken-child" } } }));
-    assert.equal(host.orders.length, PUSHES_WITHOUT_PROGRESS_CAP);
-    assert.deepEqual([...new Set(host.sessionIDs)], ["ses-woken-root"]);
   } finally {
     rmSync(fixture.base, { recursive: true, force: true });
   }
@@ -331,18 +321,16 @@ test("a stuck child is reported and the hold released by the hold's own timer, w
   mock.timers.enable({ apis: ["setTimeout", "Date"], now: CHILD_LAUNCHED_AT_MS });
   try {
     armRun(fixture, ["auto=running"]);
-    const host = postedTurns();
     const advisories = streamedAdvisories();
-    const hooks = await pluginOver(fixture, host, advisories);
-    await announced(fixture, hooks, "session.created", { info: { id: "ses-stuck-child", parentID: "ses-stuck-root" } });
-    await settledAfter(fixture, () => hooks.event!({ event: { type: "session.idle", properties: { sessionID: "ses-stuck-root" } } }));
+    const host = await pluginOver(fixture);
+    await heldOver(fixture, host, "ses-stuck-child", "ses-stuck-root");
     await settledAfter(fixture, () => mock.timers.tick(59 * MINUTE_MS));
-    assert.deepEqual(host.orders, []);
+    assert.deepEqual(host.prompts(), []);
 
     await settledAfter(fixture, () => mock.timers.tick(MINUTE_MS));
     assert.match(advisories.messages.join("\n"), /ses-stuck-child stuck: silent 60 min/);
     assert.match(journalOf(fixture), /ses-stuck-child stuck: silent 60 min/);
-    assert.equal(host.orders.length, PUSHES_WITHOUT_PROGRESS_CAP);
+    assert.deepEqual(host.prompts(), [{ sessionID: "ses-stuck-root", text: CONTINUATION_ORDER }]);
   } finally {
     mock.timers.reset();
     rmSync(fixture.base, { recursive: true, force: true });
@@ -353,110 +341,78 @@ const CHATTER_EVERY_MINUTES = 5;
 
 async function chatteredUntil(
   fixture: RailFixture,
-  hooks: LooseHooks,
+  host: FakeHostContext,
   minutes: number,
-  event: SessionEvent,
+  chattering: string,
 ): Promise<void> {
   for (let elapsed = CHATTER_EVERY_MINUTES; elapsed <= minutes; elapsed += CHATTER_EVERY_MINUTES) {
     await settledAfter(fixture, () => mock.timers.tick(CHATTER_EVERY_MINUTES * MINUTE_MS));
-    await settledAfter(fixture, () => hooks.event!({ event }));
+    host.emit({ type: "session.text.delta", data: { sessionID: chattering } });
+    await settledAfter(fixture, () => {});
   }
 }
 
-async function heldOver(fixture: RailFixture, hooks: LooseHooks, childID: string, rootID: string): Promise<void> {
-  await announced(fixture, hooks, "session.created", { info: { id: childID, parentID: rootID } });
-  await settledAfter(fixture, () => hooks.event!({ event: { type: "session.idle", properties: { sessionID: rootID } } }));
+async function heldOver(fixture: RailFixture, host: FakeHostContext, childID: string, rootID: string): Promise<void> {
+  host.emit({ type: "session.created", data: { sessionID: childID, parentID: rootID } });
+  await settledAfter(fixture, () => {});
+  await settledAfter(fixture, () => host.hook("session", "experimental.idle")({ sessionID: rootID, background: [] }));
 }
 
-test("a child streaming message parts past the silence threshold stays held, and is reported only once it goes silent", async () => {
+test("a child streaming events past the silence threshold stays held, and is reported only once it goes silent", async () => {
   const fixture = makeFixture();
   mock.timers.enable({ apis: ["setTimeout", "Date"], now: CHILD_LAUNCHED_AT_MS });
   try {
     armRun(fixture, ["auto=running"]);
-    const host = postedTurns();
     const advisories = streamedAdvisories();
-    const hooks = await pluginOver(fixture, host, advisories);
-    await heldOver(fixture, hooks, "ses-streaming-child", "ses-streaming-root");
-    await chatteredUntil(fixture, hooks, 100, {
-      type: "message.part.updated",
-      properties: { part: { id: "prt-streaming", messageID: "msg-streaming", sessionID: "ses-streaming-child" } },
-    });
-    assert.deepEqual(host.orders, []);
+    const host = await pluginOver(fixture);
+    await heldOver(fixture, host, "ses-streaming-child", "ses-streaming-root");
+    await chatteredUntil(fixture, host, 100, "ses-streaming-child");
+    assert.deepEqual(host.prompts(), []);
     assert.doesNotMatch(advisories.messages.join("\n"), /ses-streaming-child stuck/);
 
     await settledAfter(fixture, () => mock.timers.tick(59 * MINUTE_MS));
-    assert.deepEqual(host.orders, []);
+    assert.deepEqual(host.prompts(), []);
     await settledAfter(fixture, () => mock.timers.tick(MINUTE_MS));
     assert.match(advisories.messages.join("\n"), /ses-streaming-child stuck: silent 60 min/);
-    assert.equal(host.orders.length, PUSHES_WITHOUT_PROGRESS_CAP);
+    assert.equal(host.prompts().length, 1);
   } finally {
     mock.timers.reset();
     rmSync(fixture.base, { recursive: true, force: true });
   }
 });
 
-test("a child updating its messages stays held until it crosses the in-flight ceiling", async () => {
+test("a child working through events stays held until it crosses the in-flight ceiling", async () => {
   const fixture = makeFixture();
   mock.timers.enable({ apis: ["setTimeout", "Date"], now: CHILD_LAUNCHED_AT_MS });
   try {
     armRun(fixture, ["auto=running"]);
-    const host = postedTurns();
     const advisories = streamedAdvisories();
-    const hooks = await pluginOver(fixture, host, advisories);
-    await heldOver(fixture, hooks, "ses-working-child", "ses-working-root");
-    await chatteredUntil(fixture, hooks, 175, {
-      type: "message.updated",
-      properties: { info: { id: "msg-working", sessionID: "ses-working-child", role: "assistant" } },
-    });
-    assert.deepEqual(host.orders, []);
+    const host = await pluginOver(fixture);
+    await heldOver(fixture, host, "ses-working-child", "ses-working-root");
+    await chatteredUntil(fixture, host, 175, "ses-working-child");
+    assert.deepEqual(host.prompts(), []);
     assert.doesNotMatch(advisories.messages.join("\n"), /ses-working-child (stuck|long-running)/);
 
     await settledAfter(fixture, () => mock.timers.tick(CHATTER_EVERY_MINUTES * MINUTE_MS));
     assert.match(advisories.messages.join("\n"), /ses-working-child long-running: in flight 180 min/);
-    assert.equal(host.orders.length, PUSHES_WITHOUT_PROGRESS_CAP);
+    assert.equal(host.prompts().length, 1);
   } finally {
     mock.timers.reset();
     rmSync(fixture.base, { recursive: true, force: true });
   }
 });
 
-test("the parent's own message events are no activity of its child, even one whose message id reads like the child", async () => {
+test("the Cleanup clears a held run's timer, so no turn is posted past the threshold", async () => {
   const fixture = makeFixture();
   mock.timers.enable({ apis: ["setTimeout", "Date"], now: CHILD_LAUNCHED_AT_MS });
   try {
     armRun(fixture, ["auto=running"]);
-    const host = postedTurns();
-    const advisories = streamedAdvisories();
-    const hooks = await pluginOver(fixture, host, advisories);
-    await heldOver(fixture, hooks, "ses-quiet-child", "ses-chatty-root");
-    await chatteredUntil(fixture, hooks, 55, {
-      type: "message.updated",
-      properties: { info: { id: "ses-quiet-child", sessionID: "ses-chatty-root", role: "assistant" } },
-    });
-    await chatteredUntil(fixture, hooks, 5, {
-      type: "message.part.updated",
-      properties: { part: { id: "prt-root", messageID: "ses-quiet-child", sessionID: "ses-chatty-root" } },
-    });
-    assert.match(advisories.messages.join("\n"), /ses-quiet-child stuck: silent 60 min/);
-    assert.equal(host.orders.length, PUSHES_WITHOUT_PROGRESS_CAP);
-  } finally {
-    mock.timers.reset();
-    rmSync(fixture.base, { recursive: true, force: true });
-  }
-});
-
-test("disposing the plugin clears a held run's timer, so no turn is posted past the threshold", async () => {
-  const fixture = makeFixture();
-  mock.timers.enable({ apis: ["setTimeout", "Date"], now: CHILD_LAUNCHED_AT_MS });
-  try {
-    armRun(fixture, ["auto=running"]);
-    const host = postedTurns();
-    const hooks = await pluginOver(fixture, host);
-    await announced(fixture, hooks, "session.created", { info: { id: "ses-disposed-child", parentID: "ses-disposed-root" } });
-    await settledAfter(fixture, () => hooks.event!({ event: { type: "session.idle", properties: { sessionID: "ses-disposed-root" } } }));
-    await settledAfter(fixture, () => hooks.dispose!());
+    const host = await pluginOver(fixture);
+    const cleanup = await entry.setup(host.context);
+    await heldOver(fixture, host, "ses-disposed-child", "ses-disposed-root");
+    await settledAfter(fixture, () => cleanup());
     await settledAfter(fixture, () => mock.timers.tick(181 * MINUTE_MS));
-    assert.deepEqual(host.orders, []);
+    assert.deepEqual(host.prompts(), []);
   } finally {
     mock.timers.reset();
     rmSync(fixture.base, { recursive: true, force: true });
@@ -483,37 +439,22 @@ test("the order this host is handed names the report the launch returned, never 
   assert.doesNotMatch(CONTINUATION_ORDER, /do NOT relaunch it/);
 });
 
-test("a host that hands the plugin no session api leaves the run standing instead of throwing", async () => {
+test("the plugin's own idle hook drives the rail, and a denied production deploy does not stop it", async () => {
   const fixture = makeFixture();
   try {
     armRun(fixture, ["auto=running"]);
-    const outcome = await underRailFixtureHome(fixture, () => continueUnattendedRun({
-      sessionID: "ses-root",
-      directory: fixture.repo,
-    }));
-    assert.equal(outcome.kind, "failed");
-    assert.match(outcome.kind === "failed" ? outcome.reason : "", /no session api/);
-  } finally {
-    rmSync(fixture.base, { recursive: true, force: true });
-  }
-});
-
-test("the plugin's own idle event drives the rail, and a denied production deploy does not stop it", async () => {
-  const fixture = makeFixture();
-  try {
-    armRun(fixture, ["auto=running"]);
-    const host = postedTurns();
-    const hooks = (await osoCode({
-      directory: fixture.repo,
-      client: { session: host.session },
-    })) as unknown as LooseHooks;
+    const host = await pluginOver(fixture);
 
     const denial = await underRailFixtureHome(fixture, async () => {
       try {
-        await hooks["tool.execute.before"]!(
-          { tool: "bash", sessionID: "ses-root", cwd: fixture.repo },
-          { args: { command: PRODUCTION_DEPLOY } },
-        );
+        await host.hook("tool", "execute.before")({
+          tool: "shell",
+          sessionID: "ses-root",
+          agent: "build",
+          messageID: "msg-1",
+          id: "call-1",
+          input: { command: PRODUCTION_DEPLOY },
+        });
         return "allowed";
       } catch (error) {
         return (error as Error).message;
@@ -521,41 +462,23 @@ test("the plugin's own idle event drives the rail, and a denied production deplo
     });
     assert.match(denial, /a production deploy stays with the operator/);
 
-    await underRailFixtureHome(fixture, async () => {
-      await hooks.event!({ event: { type: "session.idle", properties: { sessionID: "ses-root" } } });
-      await yieldUntilRailReachesItsCap();
-    });
-    assert.equal(host.orders[0], CONTINUATION_ORDER, "the denied deploy left the continuation rail armed");
-    assert.equal(host.orders.length, PUSHES_WITHOUT_PROGRESS_CAP);
+    await settledAfter(fixture, () => host.hook("session", "experimental.idle")({ sessionID: "ses-root", background: [] }));
+    assert.deepEqual(host.prompts(), [{ sessionID: "ses-root", text: CONTINUATION_ORDER }], "the denied deploy left the continuation rail armed");
   } finally {
     rmSync(fixture.base, { recursive: true, force: true });
   }
 });
 
-async function pluginOver(
-  fixture: RailFixture,
-  host: PostedTurns,
-  advisories: StreamedAdvisories = streamedAdvisories(),
-): Promise<LooseHooks> {
-  const client = { session: host.session, tui: advisories.client.tui };
-  return (await osoCode({ directory: fixture.repo, client })) as unknown as LooseHooks;
+async function pluginOver(fixture: RailFixture): Promise<FakeHostContext> {
+  const host = fakeHostContext({ directory: fixture.repo, defaultSessionDirectory: fixture.repo });
+  await entry.setup(host.context);
+  return host;
 }
 
 async function settledAfter(fixture: RailFixture, act: () => unknown): Promise<void> {
   await underRailFixtureHome(fixture, async () => {
     await act();
     await yieldUntilRailReachesItsCap();
-  });
-}
-
-async function announced(
-  fixture: RailFixture,
-  hooks: LooseHooks,
-  type: string,
-  properties: Record<string, unknown>,
-): Promise<void> {
-  await underRailFixtureHome(fixture, async () => {
-    await hooks.event!({ event: { type, properties } });
   });
 }
 

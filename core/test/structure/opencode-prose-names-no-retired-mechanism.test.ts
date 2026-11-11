@@ -5,7 +5,8 @@ import { readTrackedText, trackedRepositoryFiles } from "../support/tracked-file
 
 const PROSE_SOURCE_PREFIX = "core/src/prose/";
 const OPENCODE_PROSE_SOURCE_SUFFIX = "opencode.md";
-const OPENCODE_RENDERED_PREFIXES = ["opencode/skills/", "opencode/commands/"];
+const OPENCODE_RENDERED_PREFIXES = ["opencode/skills/", "opencode/commands/", "opencode/agents/"];
+const OPENCODE_SHARED_REFERENCE = "plugin/skills/_shared/references/opencode.md";
 
 const OPENCODE_PROSE_FILES_FLOOR = 12;
 
@@ -16,12 +17,23 @@ const RETIRED_MECHANISMS: readonly RegExp[] = [
   /auto_wait/,
   /journal growth/i,
   /moved the (run )?journal/i,
+  /\bshell\.env\b/,
+  /`task`/,
+  /\btool\.execute\.(before|after)\b/,
+  /\bapply_patch\b/,
+  /\bsession\.(idle|compacted)\b/,
+  /\bexperimental\.chat\b/,
+  /\bsubagent_type\b/,
+  /\bexplore\b/,
+  /\bsynchronous\b/i,
+  /`bash`|\bbash(:| call| tool| permission)/i,
 ];
 
 const openCodeProseFiles = trackedRepositoryFiles().filter(
   (file) =>
     file.endsWith(".md") &&
     ((file.startsWith(PROSE_SOURCE_PREFIX) && file.endsWith(OPENCODE_PROSE_SOURCE_SUFFIX)) ||
+      file === OPENCODE_SHARED_REFERENCE ||
       OPENCODE_RENDERED_PREFIXES.some((prefix) => file.startsWith(prefix))),
 );
 
@@ -54,6 +66,19 @@ describe("OpenCode prose names no mechanism this host retired", () => {
       "the auto_wait key",
       "journal growth resets it",
       "a turn that moved the run journal nowhere",
+      "through the plugin's shell.env hook",
+      "launched through the `task` tool",
+      "the tool.execute.after hook",
+      "the apply_patch tool",
+      "the session.idle event",
+      "the experimental.chat.system.transform hook",
+      "the subagent_type argument",
+      "launch the explore agent",
+      "a synchronous launch",
+      "the `bash` tool",
+      "one bash call per command",
+      "bash: deny",
+      "the bash permission",
     ];
     for (const line of planted) {
       assert.equal(retiredMechanismHits("planted.md", line).length, 1, line);

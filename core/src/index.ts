@@ -6,15 +6,22 @@ export {
   type HookCaller,
   type HookEnvelope,
 } from "./hosts/envelope.ts";
+export { PlanDeltaError, planDeltaDigestOf, planDeltaOf, planDeltaSummaryOf, renderPlanDelta } from "./plan/delta.ts";
 export { APPLIER_PROOF_HEADER } from "./prose/applier-proof.ts";
 export { VERIFIER_AGENT } from "./prose/routes.ts";
 export { openCodeRoutes, type OpenCodeRoute } from "./routes/render.ts";
 export {
+  heldPlanOf,
   PlanApprovalError,
   PlanFailure,
+  presentedPlanOf,
+  refuseReplacingAHeldPlanWhileASliceIsActive,
   runApprovePlan,
   runCancelApprovedPlan,
   runCapturePlan,
+  runPresentPlan,
+  runSupersedePlan,
+  type HeldPlan,
 } from "./state/plan.ts";
 export {
   appendJournal,

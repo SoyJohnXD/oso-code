@@ -1,14 +1,13 @@
 import { logEvent } from "@oso-code/core";
 
 export type TraceSeverity = "enforcement" | "advisory";
-export type TraceSinkName = "state" | "log" | "toast";
+export type TraceSinkName = "state" | "log";
 
 export interface TraceInput {
   origin: string;
   detail: string;
   severity?: TraceSeverity;
   sessionID?: string;
-  client?: unknown;
 }
 
 export interface TraceSinkResult {
@@ -16,7 +15,7 @@ export interface TraceSinkResult {
   ok: boolean;
 }
 
-export const TRACE_SINK_ORDER: readonly TraceSinkName[] = ["state", "log", "toast"];
+export const TRACE_SINK_ORDER: readonly TraceSinkName[] = ["state", "log"];
 
 export function recordTrace(input: TraceInput): TraceSinkResult[] {
   const severity = input.severity ?? "advisory";
@@ -29,11 +28,7 @@ export function recordTrace(input: TraceInput): TraceSinkResult[] {
       results.push({ sink, ok });
       continue;
     }
-    if (sink === "log") {
-      results.push({ sink, ok: tryLogSink(input.origin, input.detail, severity, stateSinkBroken) });
-      continue;
-    }
-    results.push({ sink, ok: tryToastSink(input.origin, input.detail, severity, input.client) });
+    results.push({ sink, ok: tryLogSink(input.origin, input.detail, severity, stateSinkBroken) });
   }
   return results;
 }
@@ -57,46 +52,4 @@ function tryLogSink(origin: string, detail: string, severity: TraceSeverity, sta
   } catch {
     return false;
   }
-}
-
-function tryToastSink(origin: string, detail: string, severity: TraceSeverity, client: unknown): boolean {
-  const showToast = toastFnOf(client);
-  if (showToast === undefined) {
-    return false;
-  }
-  try {
-    const outcome = showToast({
-      body: {
-        title: "oso-code",
-        message: `${origin}: ${detail}`,
-        variant: severity === "enforcement" ? "error" : "warning",
-      },
-    });
-    settleQuietly(outcome);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-function settleQuietly(outcome: unknown): void {
-  if (typeof outcome !== "object" || outcome === null) {
-    return;
-  }
-  const thenable = (outcome as { catch?: unknown }).catch;
-  if (typeof thenable === "function") {
-    (thenable as (onRejected: (reason: unknown) => void) => unknown).call(outcome, () => {});
-  }
-}
-
-function toastFnOf(client: unknown): ((input: unknown) => unknown) | undefined {
-  if (typeof client !== "object" || client === null) {
-    return undefined;
-  }
-  const tui = (client as { tui?: unknown }).tui;
-  if (typeof tui !== "object" || tui === null) {
-    return undefined;
-  }
-  const showToast = (tui as { showToast?: unknown }).showToast;
-  return typeof showToast === "function" ? (showToast as (input: unknown) => unknown) : undefined;
 }

@@ -197,6 +197,7 @@ describe("the rows this half owns are the artifact and repository rows, and the 
       "owned MCP servers closed on every installed agent",
       "mode commands installed and routed",
       "plugin entry, modules and routes installed",
+      "installed plugin loads on the host",
       "Engram plugin file installed",
       "installer-owned targets recorded",
       "published gate bytes as installed",
@@ -212,6 +213,7 @@ describe("the rows this half owns are the artifact and repository rows, and the 
     const drivenByTheAssembly = OPENCODE_LOCAL_CHECK_ROWS.filter((row) => THIS_HALF_READS.includes(row.kind) && !compared.includes(row.name));
     assert.deepEqual(drivenByTheAssembly.map((row) => row.name), [
       "isolated fixture install",
+      "installed plugin loads on the host",
       "an install outside the named home is refused",
       "OpenCode plugin typecheck",
       "OpenCode plugin test suite",

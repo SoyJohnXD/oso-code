@@ -72,29 +72,34 @@ jobs:
           failed="$(sed -n 's/^passed: [0-9]*, failed: \([0-9]*\)$/\1/p' "$report")"
           [ "$passed" = "16" ]
           [ "$failed" = "0" ]
-      - name: Pinned OpenCode binary the certify suites introspect
+      - name: Pinned OpenCode 2 binary the certify suites drive, checksum-verified against the release's own SHA256SUMS
         id: pinned-opencode-binary
         if: always() && steps.checkout.outcome == 'success' && steps.node-toolchain.outcome == 'success' && steps.dependency-install.outcome == 'success'
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           pin="$(sed -n 's/^export const SUPPORTED_OPENCODE_VERSION = "\(.*\)";$/\1/p' core/src/install/pins.ts)"
+          asset="opencode-linux-x64.tar.gz"
           mkdir -p "$RUNNER_TEMP/opencode-pin"
           cd "$RUNNER_TEMP/opencode-pin"
-          npm pack "opencode-linux-x64@$pin"
-          tar -xf "opencode-linux-x64-$pin.tgz"
-          echo "OSO_PINNED_OPENCODE_BIN=$RUNNER_TEMP/opencode-pin/package/bin/opencode" >> "$GITHUB_ENV"
-      - name: Certify suites against the pinned OpenCode binary
+          gh release download "v$pin" --repo anomalyco/opencode --pattern "$asset" --pattern SHA256SUMS
+          grep " $asset\$" SHA256SUMS | sha256sum --check -
+          tar -xzf "$asset"
+          binary="$(find "$PWD" -type f -name opencode | head -n 1)"
+          test -n "$binary"
+          "$binary" --version
+          echo "OSO_PINNED_OPENCODE_BIN=$binary" >> "$GITHUB_ENV"
+      - name: Certify suites against the pinned OpenCode 2 binary
         if: always() && steps.checkout.outcome == 'success' && steps.node-toolchain.outcome == 'success' && steps.dependency-install.outcome == 'success' && steps.pinned-opencode-binary.outcome == 'success'
         env:
           OSO_CERTIFY: 1
-          OSO_CONTRACT_BAR_OPENCODE_BIN: ${{ env.OSO_PINNED_OPENCODE_BIN }}
-          OSO_BEHAVIOR_BAR_OPENCODE_BIN: ${{ env.OSO_PINNED_OPENCODE_BIN }}
-          OSO_WAVE_SMOKE_OPENCODE_BIN: ${{ env.OSO_PINNED_OPENCODE_BIN }}
+          OSO_V2_HOST_SPIKE_OPENCODE_BIN: ${{ env.OSO_PINNED_OPENCODE_BIN }}
         run: |
           cd core
           mkdir -p "$RUNNER_TEMP/certify-tap"
           overall=0
-          for suite in opencode-contract-bar opencode-behavior-bar opencode-wave-runner-smoke; do
-            node --experimental-strip-types --test --test-reporter=tap "test/certify/${suite}.test.ts" \
+          for suite in opencode-v2-host-spike opencode-v2-plugin-load opencode-v2-gates-engage opencode-v2-tools opencode-v2-lifecycle opencode-v2-agent-permissions opencode-v2-plan-delta; do
+            node --import ./test/support/sandbox-env.mjs --experimental-strip-types --test --test-reporter=tap "test/certify/${suite}.test.ts" \
               > "$RUNNER_TEMP/certify-tap/${suite}.tap" 2>&1 || overall=1
             cat "$RUNNER_TEMP/certify-tap/${suite}.tap"
           done

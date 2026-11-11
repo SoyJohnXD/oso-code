@@ -8,7 +8,6 @@ import {
   messageOf,
   pinnedSessionTransport,
   runWave,
-  type HostSessionApi,
   type SessionTransport,
   type WaveChildResult,
 } from "./wave.ts";
@@ -77,7 +76,7 @@ async function withWavePair(fn: (pair: WavePair) => void | Promise<void>): Promi
 }
 
 interface TransportLog {
-  created: Array<{ directory: string; title: string; parentSessionID: string }>;
+  created: Array<{ directory: string; title: string; parentSessionID: string; hostAgent: string }>;
   prompted: Array<{ sessionID: string; directory: string; hostAgent: string; prompt: string }>;
   order: string[];
 }
@@ -87,6 +86,7 @@ function recordingTransport(
   createDelayMs: (directory: string) => number = () => 0,
 ): { transport: SessionTransport; log: TransportLog } {
   const log: TransportLog = { created: [], prompted: [], order: [] };
+  const opened = new Map<string, { directory: string; hostAgent: string }>();
   const transport: SessionTransport = {
     create: async (request) => {
       const delay = createDelayMs(request.directory);
@@ -95,15 +95,18 @@ function recordingTransport(
       }
       log.created.push(request);
       log.order.push(`create:${request.directory}`);
-      return { id: `ses-${log.created.length}`, directory: request.directory };
+      const id = `ses-${log.created.length}`;
+      opened.set(id, { directory: request.directory, hostAgent: request.hostAgent });
+      return { id, directory: request.directory };
     },
     prompt: async (request) => {
-      log.prompted.push(request);
+      const child = opened.get(request.sessionID) ?? { directory: "", hostAgent: "" };
+      log.prompted.push({ ...request, ...child });
       log.order.push(`prompt:${request.sessionID}`);
-      return reply(request);
+      return reply({ sessionID: request.sessionID, hostAgent: child.hostAgent });
     },
-    abort: async (request) => {
-      log.order.push(`abort:${request.sessionID}`);
+    interrupt: async (request) => {
+      log.order.push(`interrupt:${request.sessionID}`);
     },
   };
   return { transport, log };
@@ -271,7 +274,7 @@ test("a host that opens the child somewhere else is blocked instead of prompted"
         prompted.push(request.sessionID);
         return "status: done\n";
       },
-      abort: async () => {},
+      interrupt: async () => {},
     };
     const results = await runWave({
       launches: [{ worktree: pair.applierWorktree, agent: "applier", prompt: "build" }],
@@ -291,12 +294,12 @@ test("a host that opens the child somewhere else is blocked instead of prompted"
 
 test("a child that outlives its bound is aborted and comes back blocked, never as a verdict", async () => {
   await withWavePair(async (pair) => {
-    const aborted: Array<{ sessionID: string; directory: string }> = [];
+    const interrupted: Array<{ sessionID: string }> = [];
     const transport: SessionTransport = {
       create: async (request) => ({ id: "ses-runaway", directory: request.directory }),
       prompt: () => new Promise<string>(() => {}),
-      abort: async (request) => {
-        aborted.push(request);
+      interrupt: async (request) => {
+        interrupted.push(request);
       },
     };
     const results = await runWave({
@@ -309,7 +312,7 @@ test("a child that outlives its bound is aborted and comes back blocked, never a
     assert.equal(results[0]!.outcome, "blocked");
     assert.equal("verdict" in results[0]!, false);
     assert.match(results[0]!.outcome === "blocked" ? results[0]!.reason : "", /the child turn did not complete: the 40ms bound expired/);
-    assert.deepEqual(aborted, [{ sessionID: "ses-runaway", directory: pair.applierWorktree }]);
+    assert.deepEqual(interrupted, [{ sessionID: "ses-runaway" }]);
   });
 });
 
@@ -320,7 +323,7 @@ test("a child whose abort also fails names both failures and never loses the cau
       prompt: async () => {
         throw new Error("the child turn exploded");
       },
-      abort: async () => {
+      interrupt: async () => {
         throw new Error("abort refused");
       },
     };
@@ -347,7 +350,7 @@ test("a blocked child leaves its siblings reporting intact", async () => {
         return { id: "ses-a", directory: request.directory };
       },
       prompt: async () => "status: done\n",
-      abort: async () => {},
+      interrupt: async () => {},
     };
     const results = await runWave({
       launches: [
@@ -386,79 +389,82 @@ test("a child that reports without a verdict line is never read as a verdict", a
   });
 });
 
-test("pinnedSessionTransport drives the host's session create, prompt and abort", async () => {
+function childSessionHost(messagesOf: () => unknown[], calls: Array<Record<string, unknown>> = []) {
+  return {
+    create: async (input: Record<string, unknown>) => {
+      calls.push({ call: "create", ...input });
+      return { id: "ses-host" };
+    },
+    move: async (input: Record<string, unknown>) => {
+      calls.push({ call: "move", ...input });
+    },
+    wait: async (input: Record<string, unknown>) => {
+      calls.push({ call: "wait", ...input });
+    },
+    get: async () => ({ id: "ses-host", location: { directory: "/wt/a" } }),
+    prompt: async (input: Record<string, unknown>) => {
+      calls.push({ call: "prompt", ...input });
+    },
+    context: async () => messagesOf(),
+    interrupt: async (input: Record<string, unknown>) => {
+      calls.push({ call: "interrupt", ...input });
+      return { interrupted: true };
+    },
+  } as unknown as Parameters<typeof pinnedSessionTransport>[0];
+}
+
+const FINISHED_TURN = [
+  { type: "user", text: "build" },
+  { type: "assistant", content: [{ type: "reasoning", text: "thinking" }, { type: "text", text: "status: done" }] },
+  { type: "idle", outcome: "succeeded" },
+];
+
+test("pinnedSessionTransport opens the child under its parent, moves it to the worktree, and reads the pinned directory back", async () => {
   const calls: Array<Record<string, unknown>> = [];
-  const session: HostSessionApi = {
-    create: async (options) => {
-      calls.push({ call: "create", ...options });
-      return { data: { id: "ses-host", directory: options.query.directory } };
-    },
-    prompt: async (options) => {
-      calls.push({ call: "prompt", ...options });
-      return { data: { parts: [{ type: "reasoning", text: "thinking" }, { type: "text", text: "status: done" }] } };
-    },
-    abort: async (options) => {
-      calls.push({ call: "abort", ...options });
-      return { data: true };
-    },
-  };
-  const transport = pinnedSessionTransport(session);
+  const transport = pinnedSessionTransport(childSessionHost(() => FINISHED_TURN, calls));
 
-  const created = await transport.create({ directory: "/wt/a", title: "oso-applier in /wt/a", parentSessionID: "ses-root" });
+  const created = await transport.create({ directory: "/wt/a", title: "oso-applier in /wt/a", parentSessionID: "ses-root", hostAgent: "oso-applier" });
   assert.deepEqual(created, { id: "ses-host", directory: "/wt/a" });
-  const text = await transport.prompt({ sessionID: "ses-host", directory: "/wt/a", hostAgent: "oso-applier", prompt: "build" });
-  assert.equal(text, "status: done");
-  await transport.abort({ sessionID: "ses-host", directory: "/wt/a" });
+  assert.equal(await transport.prompt({ sessionID: "ses-host", prompt: "build" }), "status: done");
+  await transport.interrupt({ sessionID: "ses-host" });
 
-  assert.deepEqual(calls[0], {
-    call: "create",
-    query: { directory: "/wt/a" },
-    body: { title: "oso-applier in /wt/a", parentID: "ses-root" },
-  });
-  assert.deepEqual(calls[1], {
-    call: "prompt",
-    path: { id: "ses-host" },
-    query: { directory: "/wt/a" },
-    body: { agent: "oso-applier", parts: [{ type: "text", text: "build" }] },
-  });
-  assert.deepEqual(calls[2], { call: "abort", path: { id: "ses-host" }, query: { directory: "/wt/a" } });
+  assert.deepEqual(calls, [
+    { call: "create", location: { directory: "/wt/a" }, title: "oso-applier in /wt/a", agent: "oso-applier", parentID: "ses-root" },
+    { call: "move", sessionID: "ses-host", directory: "/wt/a" },
+    { call: "wait", sessionID: "ses-host" },
+    { call: "prompt", sessionID: "ses-host", text: "build" },
+    { call: "wait", sessionID: "ses-host" },
+    { call: "interrupt", sessionID: "ses-host" },
+  ]);
 });
 
 test("pinnedSessionTransport omits a parent id the wave never supplied", async () => {
-  const bodies: unknown[] = [];
-  const session: HostSessionApi = {
-    create: async (options) => {
-      bodies.push(options.body);
-      return { data: { id: "ses-host", directory: options.query.directory } };
-    },
-    prompt: async () => ({ data: { parts: [] } }),
-    abort: async () => ({ data: true }),
-  };
-  await pinnedSessionTransport(session).create({ directory: "/wt/a", title: "t", parentSessionID: "" });
-  assert.deepEqual(bodies, [{ title: "t" }]);
+  const calls: Array<Record<string, unknown>> = [];
+  await pinnedSessionTransport(childSessionHost(() => [], calls)).create({ directory: "/wt/a", title: "t", parentSessionID: "", hostAgent: "oso-applier" });
+  assert.equal(calls[0]?.parentID, undefined);
 });
 
-test("a host call that answers with an error rather than data fails loud and keeps the cause", async () => {
-  const session: HostSessionApi = {
-    create: async () => ({ error: { data: { message: "unknown project" }, name: "BadRequestError" } }),
-    prompt: async () => ({ data: { parts: [] } }),
-    abort: async () => ({ data: true }),
-  };
+test("a turn that ended failed fails loud and keeps the host's cause", async () => {
+  const failed = [{ type: "user", text: "p" }, { type: "idle", outcome: "failed", error: { message: "Agent not found" } }];
   await assert.rejects(
-    () => pinnedSessionTransport(session).create({ directory: "/wt/a", title: "t", parentSessionID: "" }),
-    /unknown project/,
+    () => pinnedSessionTransport(childSessionHost(() => failed)).prompt({ sessionID: "ses", prompt: "p" }),
+    /the child turn ended failed: Agent not found/,
   );
 });
 
-test("a host reply carrying no parts array fails loud instead of parsing to an empty verdict", async () => {
-  const session: HostSessionApi = {
-    create: async (options) => ({ data: { id: "ses", directory: options.query.directory } }),
-    prompt: async () => ({ data: { parts: undefined } }),
-    abort: async () => ({ data: true }),
-  };
+test("a turn the host never closed fails loud instead of parsing the previous turn's reply", async () => {
+  const unfinished = [...FINISHED_TURN, { type: "user", text: "again" }];
   await assert.rejects(
-    () => pinnedSessionTransport(session).prompt({ sessionID: "ses", directory: "/wt/a", hostAgent: "oso-applier", prompt: "p" }),
-    /no message parts/,
+    () => pinnedSessionTransport(childSessionHost(() => unfinished)).prompt({ sessionID: "ses", prompt: "again" }),
+    /no end of turn/,
+  );
+});
+
+test("a closed turn with no assistant reply fails loud instead of parsing to an empty verdict", async () => {
+  const silent = [{ type: "user", text: "p" }, { type: "idle", outcome: "succeeded" }];
+  await assert.rejects(
+    () => pinnedSessionTransport(childSessionHost(() => silent)).prompt({ sessionID: "ses", prompt: "p" }),
+    /no assistant reply/,
   );
 });
 

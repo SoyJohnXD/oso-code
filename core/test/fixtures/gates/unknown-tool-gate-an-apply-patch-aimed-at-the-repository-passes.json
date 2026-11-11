@@ -8,7 +8,7 @@
   "gate": "unknown",
   "argv": [
     "--allow",
-    "bash|read|grep|engram_mem_search|edit|write|apply_patch"
+    "bash|read|grep|engram_mem_search|edit|write|patch"
   ],
   "env": {
     "OSO_HOST": "opencode",
@@ -18,7 +18,7 @@
     ".local/state/oso-code/{repo}.state": "mode=quick\nsession=test-session\n"
   },
   "cwd": "workspace",
-  "stdin": "{\"session_id\":\"test-session\",\"cwd\":\"{cwd}\",\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"apply_patch\",\"tool_input\":{\"patchText\":\"*** Begin Patch\\n*** Update File: src/a.ts\\n*** Move to: src/b.ts\\n@@\\n-a\\n+b\\n*** End Patch\"}}",
+  "stdin": "{\"session_id\":\"test-session\",\"cwd\":\"{cwd}\",\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"patch\",\"tool_input\":{\"patchText\":\"*** Begin Patch\\n*** Update File: src/a.ts\\n*** Move to: src/b.ts\\n@@\\n-a\\n+b\\n*** End Patch\"}}",
   "expect": {
     "exit": 0,
     "stdout": "",

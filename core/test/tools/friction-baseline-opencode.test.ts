@@ -132,6 +132,19 @@ test("a subagent session's denials are attributed to its root and its own work i
   assert.equal(root.hasMainTranscript, true);
 });
 
+test("the OpenCode 2 tool ids shell and subagent count as oso-state calls and agent launches, like their 1.x names", () => {
+  const { db, file } = newFixture();
+  addSession(db, "ses_two", null, BASE_MS, BASE_MS + 600 * SECOND_MS);
+  addMessage(db, "m_two", "ses_two", "assistant");
+  addPart(db, "ses_two", "m_two", BASE_MS + SECOND_MS, { type: "tool", tool: "shell", state: { status: "completed", input: { command: "oso-state status" } } });
+  addPart(db, "ses_two", "m_two", BASE_MS + 2 * SECOND_MS, { type: "tool", tool: "shell", state: { status: "completed", input: { command: "rg oso-state core/src" } } });
+  addPart(db, "ses_two", "m_two", BASE_MS + 3 * SECOND_MS, { type: "tool", tool: "subagent", state: { status: "completed", input: {} } });
+  const session = classifyOpenCodeDb(file).sessions.find((candidate) => candidate.sessionId === "ses_two");
+  assert.ok(session);
+  assert.equal(session.osoStateCalls, 1);
+  assert.equal(session.agentLaunches, 1);
+});
+
 test("the window follows session.time_updated, not time_created", () => {
   const { db, file } = newFixture();
   addSession(db, "ses_touched", null, NOW_MS - 200 * DAY_MS, NOW_MS - DAY_MS);

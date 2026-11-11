@@ -1,32 +1,25 @@
 import { captureVerifierReport, isVerifierAgent } from "@oso-code/core";
 import { deriveRootId } from "./identity.ts";
 
-const TASK_TOOL = "task";
+const SUBAGENT_TOOL = "subagent";
+const SUBAGENT_RUNNING = "running";
 
-interface TaskCall {
-  tool?: unknown;
-  args?: { subagent_type?: unknown } | null;
+interface SubagentCompletion {
+  tool: string;
+  input: unknown;
+  status: "completed" | "error";
+  result?: { output?: unknown };
 }
 
-interface TaskResult {
-  output?: unknown;
-  metadata?: {
-    background?: unknown;
-    model?: { providerID?: unknown; modelID?: unknown } | null;
-  } | null;
-}
-
-export function captureTaskVerdict(input: unknown, output: unknown, directory: string): void {
-  const call = (input ?? {}) as TaskCall;
-  const result = (output ?? {}) as TaskResult;
-  const subagentType = call.args?.subagent_type;
-  if (call.tool !== TASK_TOOL || typeof subagentType !== "string" || !isVerifierAgent(subagentType)) {
+export function captureSubagentVerdict(call: SubagentCompletion, directory: string): void {
+  const agent = (call.input as { agent?: unknown } | null)?.agent;
+  if (call.tool !== SUBAGENT_TOOL || typeof agent !== "string" || !isVerifierAgent(agent)) {
     return;
   }
-  if (result.metadata?.background === true || typeof result.output !== "string") {
-    return;
+  const report = subagentReportOf(call);
+  if (report !== undefined) {
+    captureOpenCodeVerifierReport({ directory, model: null, report });
   }
-  captureOpenCodeVerifierReport({ directory, model: launchedModelOf(result), report: result.output });
 }
 
 export function captureOpenCodeVerifierReport(
@@ -35,9 +28,13 @@ export function captureOpenCodeVerifierReport(
   captureVerifierReport({ host: "opencode", cwd: directory, session: deriveRootId(directory), model, report });
 }
 
-function launchedModelOf(result: TaskResult): string | null {
-  const model = result.metadata?.model;
-  const providerID = model?.providerID;
-  const modelID = model?.modelID;
-  return typeof providerID === "string" && typeof modelID === "string" ? `${providerID}/${modelID}` : null;
+function subagentReportOf(call: SubagentCompletion): string | undefined {
+  if (call.status === "error") {
+    return "";
+  }
+  const outcome = (call.result?.output ?? {}) as { status?: unknown; output?: unknown };
+  if (outcome.status === SUBAGENT_RUNNING) {
+    return undefined;
+  }
+  return typeof outcome.output === "string" ? outcome.output : "";
 }

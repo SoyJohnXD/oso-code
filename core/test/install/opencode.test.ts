@@ -142,18 +142,18 @@ describe("merge_global_agents: the trailing-blank trim, the blank separator, and
 describe("keysRecordedButMissing: the four nested paths repair reads, and the containers it never restores as keys", () => {
   const recorded: ConfigDocument = {
     theme: "operator",
-    permission: { read: "allow", skill: { mine: "allow" }, task: { "mine-*": "deny" } },
+    permission: { read: "allow", skill: { mine: "allow" }, subagent: { "mine-*": "deny" } },
     mcp: { mine: { command: ["x"] } },
   };
 
-  test("names a top-level key, a permission key, a skill mode, a task pattern and an mcp server, in that order", () => {
+  test("names a top-level key, a permission key, a skill mode, a subagent pattern and an mcp server, in that order", () => {
     const missing = keysRecordedButMissing(recorded, {});
-    assert.deepEqual(missing.map((key) => key.keyPath), ["theme", "permission.read", "permission.skill.mine", "permission.task.mine-*", "mcp.mine"]);
+    assert.deepEqual(missing.map((key) => key.keyPath), ["theme", "permission.read", "permission.skill.mine", "permission.subagent.mine-*", "mcp.mine"]);
   });
 
-  test("never names permission, mcp, permission.skill or permission.task themselves, since those are containers", () => {
+  test("never names permission, mcp, permission.skill or permission.subagent themselves, since those are containers", () => {
     const named = keysRecordedButMissing(recorded, {}).map((key) => key.keyPath);
-    for (const container of ["permission", "mcp", "permission.skill", "permission.task"]) assert.equal(named.includes(container), false);
+    for (const container of ["permission", "mcp", "permission.skill", "permission.subagent"]) assert.equal(named.includes(container), false);
   });
 
   test("names nothing when the live config already holds every recorded key", () => {
@@ -163,7 +163,7 @@ describe("keysRecordedButMissing: the four nested paths repair reads, and the co
   test("restoring appends each key to its own container, leaving what is already there in place", () => {
     const live: ConfigDocument = { permission: { write: "deny" } };
     const restored = withRestoredKeys(live, keysRecordedButMissing(recorded, live));
-    assert.deepEqual(restored["permission"], { write: "deny", read: "allow", skill: { mine: "allow" }, task: { "mine-*": "deny" } });
+    assert.deepEqual(restored["permission"], { write: "deny", read: "allow", skill: { mine: "allow" }, subagent: { "mine-*": "deny" } });
     assert.deepEqual(restored["mcp"], { mine: { command: ["x"] } });
   });
 });
@@ -181,12 +181,16 @@ describe("restoreBlockedBy: the one place this port refuses where the bash would
   });
 });
 
-describe("versionFieldOf: strip ANSI, split into lines, strip every POSIX space per line, then match a bare dotted version", () => {
+describe("versionFieldOf: strip ANSI, split into lines, strip every POSIX space per line, then match a bare dotted version or the OpenCode 2 `opencode v` line", () => {
   test("strips ANSI colour and per-line POSIX space, leaving a clean bare-dotted-version line matched with nothing to discard", () => {
     assert.deepEqual(versionFieldOf("[32m 1.18.22 [0m\n"), { kind: "matched", version: "1.18.22", discarded: [] });
   });
 
-  test("a label squashed against the version by the per-line space strip stays non-matching and is reported rather than folded into a version", () => {
+  test("reads the OpenCode 2 line `opencode v2.2.6` as the version it carries", () => {
+    assert.deepEqual(versionFieldOf("opencode v2.2.6\n"), { kind: "matched", version: "2.2.6", discarded: [] });
+  });
+
+  test("a label with no v squashed against the version by the per-line space strip stays non-matching and is reported rather than folded into a version", () => {
     assert.deepEqual(versionFieldOf("opencode\t1.18.22\r\n"), { kind: "unmatched", raw: "opencode1.18.22\n" });
   });
 
