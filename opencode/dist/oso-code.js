@@ -472,12 +472,12 @@ function jsonObjectOf(text) {
     return void 0;
   }
 }
-function writeStatePairs(stateFile, pairs, ownerSession) {
+function writeStatePairs(stateFile, pairs, ownerSession, removedKeys = []) {
   const directory = path.dirname(stateFile);
   const read = readStateFile(stateFile);
   if (read.kind === "unreadable") throw new StateFileUnreadableError(stateFile, read.cause);
   const existing = read.kind === "ok" ? read.content : "";
-  let lines = parseStateLines(existing);
+  let lines = parseStateLines(existing).filter((line) => !removedKeys.includes(line.key));
   for (const pair of [...pairs, `session=${ownerSession}`]) {
     const [key, value] = splitPair(pair);
     lines = lines.filter((line) => line.key !== key);
@@ -4492,24 +4492,10 @@ function runCapturePlan(cwd, sessionId, digest, document) {
   const paths = planPaths(stateFile, digest);
   ensurePlanDirectory(paths);
   if (document.length === 0) throw new PlanFailure("capture-plan requires a non-empty plan document on stdin");
-  const uncheckedSlice = firstSliceNamingNoCheck(document);
-  if (uncheckedSlice !== void 0) {
-    throw new PlanFailure(
-      `capture-plan requires slice ${uncheckedSlice} to name ${VERIFY_CHECK_TOKENS.join(" or ")} on its Verify line`
-    );
-  }
+  refuseASliceNamingNoCheck("capture-plan", document);
   return withLock(stateFile, sessionId, () => {
     refuseGateWritesByAForeignSession(stateFile, sessionId);
-    if (existsSync3(paths.presentedFile)) {
-      if (!isPrivateRegularFile(paths.presentedFile)) {
-        throw new PlanFailure("presented snapshot is not a private regular file");
-      }
-      if (readFileSync4(paths.presentedFile, "utf8") !== document) {
-        throw new PlanFailure("presented snapshot content disagrees with its approval digest");
-      }
-    } else {
-      writeFileAtomically(paths.dir, paths.presentedFile, document, ".snapshot.");
-    }
+    writePresentedSnapshot(paths, document);
     if (existsSync3(paths.currentFile) && !isPrivateRegularFile(paths.currentFile)) {
       throw new PlanFailure("current plan is not a private regular file");
     }
@@ -4528,12 +4514,14 @@ function runCapturePlan(cwd, sessionId, digest, document) {
         `plan_current_file=${paths.currentFile}`,
         "plan_revision=0"
       ],
-      sessionId
+      sessionId,
+      PRESENTED_PLAN_KEYS
     );
     logEvent({ event: "plan-artifact-captured", session: sessionId, command: digest });
     return 0;
   });
 }
+var PRESENTED_PLAN_KEYS = ["plan_presented_digest", "plan_presented_base", "plan_presented_turn"];
 function runApprovePlan(cwd, sessionId, digest) {
   if (!isValidPlanDigest(digest)) {
     throw new PlanApprovalError("approve-plan requires one lowercase SHA-256 digest");
@@ -4571,17 +4559,7 @@ function runApprovePlan(cwd, sessionId, digest) {
       if (!byteIdentical(paths.currentFile, paths.presentedFile)) {
         throw new PlanFailure("the pending plan changed since it was presented; capture it again before approving");
       }
-      if (existsSync3(paths.approvedFile)) {
-        if (!isPrivateRegularFile(paths.approvedFile)) {
-          throw new PlanFailure("approved snapshot is not a private regular file");
-        }
-        if (!byteIdentical(paths.presentedFile, paths.approvedFile)) {
-          throw new PlanFailure("approved snapshot content disagrees with the pending document");
-        }
-        rmSync6(paths.presentedFile, { force: true });
-      } else {
-        renameSync3(paths.presentedFile, paths.approvedFile);
-      }
+      promotePresentedSnapshot(paths, "the pending document");
     } else if (!isPrivateRegularFile(paths.approvedFile)) {
       throw new PlanFailure("presented plan snapshot is missing");
     }
@@ -4616,7 +4594,8 @@ function runCancelApprovedPlan(cwd, sessionId, digest) {
         `verify_green=${disarming.verify_green}`,
         "plan_approval=cancelled"
       ],
-      sessionId
+      sessionId,
+      PRESENTED_PLAN_KEYS
     );
     logEvent({ event: "plan-approval-abandoned", session: sessionId, command: digest });
     return 0;
@@ -4624,6 +4603,31 @@ function runCancelApprovedPlan(cwd, sessionId, digest) {
 }
 function byteIdentical(leftFile, rightFile) {
   return readFileSync4(leftFile).equals(readFileSync4(rightFile));
+}
+function writePresentedSnapshot(paths, document) {
+  if (!existsSync3(paths.presentedFile)) {
+    writeFileAtomically(paths.dir, paths.presentedFile, document, ".snapshot.");
+    return;
+  }
+  if (!isPrivateRegularFile(paths.presentedFile)) {
+    throw new PlanFailure("presented snapshot is not a private regular file");
+  }
+  if (readFileSync4(paths.presentedFile, "utf8") !== document) {
+    throw new PlanFailure("presented snapshot content disagrees with its approval digest");
+  }
+}
+function promotePresentedSnapshot(paths, promotedLabel) {
+  if (!existsSync3(paths.approvedFile)) {
+    renameSync3(paths.presentedFile, paths.approvedFile);
+    return;
+  }
+  if (!isPrivateRegularFile(paths.approvedFile)) {
+    throw new PlanFailure("approved snapshot is not a private regular file");
+  }
+  if (!byteIdentical(paths.presentedFile, paths.approvedFile)) {
+    throw new PlanFailure(`approved snapshot content disagrees with ${promotedLabel}`);
+  }
+  rmSync6(paths.presentedFile, { force: true });
 }
 var EXECUTION_AMENDMENT_HEADING = "Execution amendment";
 var PLAN_MODE_FEEDBACK_HEADING = "Plan Mode feedback";
@@ -4633,6 +4637,13 @@ var MARKDOWN_LIST_OR_HEADING = /^[\s>]*(?:#{1,6}\s+)?(?:[-*+]\s+|\d+[.)]\s+)?(?:
 var MARKDOWN_EMPHASIS = /^[*_]{1,3}/;
 var SLICE_LABEL = /^(S\d+|Slice\s+\d+)(?:\s+[A-Z]{2,})*(?:\s*\([^)]*\))?\s*[—–:-]/;
 var MARKDOWN_HEADING = /^[\s>]*(#{1,6})\s+/;
+function refuseASliceNamingNoCheck(verb, document) {
+  const uncheckedSlice = firstSliceNamingNoCheck(document);
+  if (uncheckedSlice === void 0) return;
+  throw new PlanFailure(
+    `${verb} requires slice ${uncheckedSlice} to name ${VERIFY_CHECK_TOKENS.join(" or ")} on its Verify line`
+  );
+}
 function firstSliceNamingNoCheck(document) {
   return sliceBlocksIn(document).find(({ text }) => !namesAVerifyCheck(text))?.label;
 }

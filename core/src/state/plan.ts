@@ -53,24 +53,10 @@ export function runCapturePlan(cwd: string, sessionId: string, digest: string, d
   const paths = planPaths(stateFile, digest);
   ensurePlanDirectory(paths);
   if (document.length === 0) throw new PlanFailure("capture-plan requires a non-empty plan document on stdin");
-  const uncheckedSlice = firstSliceNamingNoCheck(document);
-  if (uncheckedSlice !== undefined) {
-    throw new PlanFailure(
-      `capture-plan requires slice ${uncheckedSlice} to name ${VERIFY_CHECK_TOKENS.join(" or ")} on its Verify line`,
-    );
-  }
+  refuseASliceNamingNoCheck("capture-plan", document);
   return store.withLock(stateFile, sessionId, () => {
     store.refuseGateWritesByAForeignSession(stateFile, sessionId);
-    if (existsSync(paths.presentedFile)) {
-      if (!store.isPrivateRegularFile(paths.presentedFile)) {
-        throw new PlanFailure("presented snapshot is not a private regular file");
-      }
-      if (readFileSync(paths.presentedFile, "utf8") !== document) {
-        throw new PlanFailure("presented snapshot content disagrees with its approval digest");
-      }
-    } else {
-      store.writeFileAtomically(paths.dir, paths.presentedFile, document, ".snapshot.");
-    }
+    writePresentedSnapshot(paths, document);
     if (existsSync(paths.currentFile) && !store.isPrivateRegularFile(paths.currentFile)) {
       throw new PlanFailure("current plan is not a private regular file");
     }
@@ -90,8 +76,115 @@ export function runCapturePlan(cwd: string, sessionId: string, digest: string, d
         "plan_revision=0",
       ],
       sessionId,
+      PRESENTED_PLAN_KEYS,
     );
     store.logEvent({ event: "plan-artifact-captured", session: sessionId, command: digest });
+    return 0;
+  });
+}
+
+const PRESENTED_PLAN_KEYS = ["plan_presented_digest", "plan_presented_base", "plan_presented_turn"] as const;
+
+export type HeldPlan =
+  | Readonly<{ kind: "none" }>
+  | Readonly<{ kind: "held"; approval: "pending" | "approved"; digest: string; document: string; current: string }>;
+
+export function heldPlanOf(cwd: string): HeldPlan {
+  const stateFile = store.stateFileFor(cwd);
+  const approval = store.readValue(stateFile, "plan_approval");
+  if (approval === undefined || approval === "cancelled") return { kind: "none" };
+  if (approval !== "pending" && approval !== "approved") {
+    throw new PlanFailure(`the held plan has an unknown approval state: ${approval}`);
+  }
+  const digest = store.readValue(stateFile, "plan_approval_digest") ?? "";
+  if (!isValidPlanDigest(digest)) throw new PlanFailure("the plan has no valid digest");
+  const paths = planPaths(stateFile, digest);
+  const snapshotFile = approval === "approved" ? paths.approvedFile : paths.presentedFile;
+  if (store.readValue(stateFile, "plan_snapshot_file") !== snapshotFile) {
+    throw new PlanFailure("plan state does not name its expected immutable snapshot");
+  }
+  if (store.readValue(stateFile, "plan_current_file") !== paths.currentFile) {
+    throw new PlanFailure("plan state does not name its operational plan");
+  }
+  return {
+    kind: "held",
+    approval,
+    digest,
+    document: privatePlanText(snapshotFile, "the immutable snapshot"),
+    current: privatePlanText(paths.currentFile, "current plan"),
+  };
+}
+
+export type PresentedPlan = Readonly<{ digest: string; base: string; turn: string }>;
+
+export function presentedPlanOf(cwd: string): PresentedPlan | undefined {
+  const stateFile = store.stateFileFor(cwd);
+  const [digest, base, turn] = PRESENTED_PLAN_KEYS.map((key) => store.readValue(stateFile, key));
+  if (digest === undefined || base === undefined || turn === undefined || !isValidPlanDigest(digest)) return undefined;
+  if (!store.isPrivateRegularFile(planPaths(stateFile, digest).presentedFile)) return undefined;
+  return { digest, base, turn };
+}
+
+export function runPresentPlan(cwd: string, sessionId: string, digest: string, document: string, turn: string): number {
+  if (!isValidPlanDigest(digest)) throw new PlanFailure("present-plan requires one lowercase SHA-256 digest");
+  if (turn === "" || turn.includes("\n")) throw new PlanFailure("present-plan requires a single-line turn id");
+  const stateFile = store.stateFileFor(cwd);
+  const paths = planPaths(stateFile, digest);
+  ensurePlanDirectory(paths);
+  if (document.length === 0) throw new PlanFailure("present-plan requires a non-empty plan document");
+  refuseASliceNamingNoCheck("present-plan", document);
+  return store.withLock(stateFile, sessionId, () => {
+    store.refuseGateWritesByAForeignSession(stateFile, sessionId);
+    const held = heldPlanOf(cwd);
+    if (held.kind === "none") throw new PlanFailure("present-plan requires a held plan; capture a first plan instead");
+    refuseWhileASliceIsActive(stateFile, "present-plan");
+    if (held.digest === digest) throw new PlanFailure("the held plan is already this document");
+    writePresentedSnapshot(paths, document);
+    store.writeStatePairs(
+      stateFile,
+      [`plan_presented_digest=${digest}`, `plan_presented_base=${held.digest}`, `plan_presented_turn=${turn}`],
+      sessionId,
+    );
+    store.logEvent({ event: "plan-presented", session: sessionId, command: digest });
+    return 0;
+  });
+}
+
+export function runSupersedePlan(cwd: string, sessionId: string, digest: string): number {
+  if (!isValidPlanDigest(digest)) throw new PlanFailure("supersede-plan requires one lowercase SHA-256 digest");
+  const stateFile = store.stateFileFor(cwd);
+  const paths = planPaths(stateFile, digest);
+  ensurePlanDirectory(paths);
+  return store.withLock(stateFile, sessionId, () => {
+    store.refuseGateWritesByAForeignSession(stateFile, sessionId);
+    if (store.readValue(stateFile, "plan_presented_digest") !== digest) {
+      throw new PlanFailure("supersede-plan requires the presented plan to carry this digest");
+    }
+    const document = privatePlanText(paths.presentedFile, "presented snapshot");
+    if (heldPlanOf(cwd).kind === "none") throw new PlanFailure("supersede-plan requires a held plan");
+    refuseWhileASliceIsActive(stateFile, "supersede-plan");
+    const revisionText = store.readValue(stateFile, "plan_revision") ?? "0";
+    if (!/^[0-9]+$/.test(revisionText)) throw new PlanFailure("current plan has no valid revision");
+    promotePresentedSnapshot(paths, "the presented document");
+    store.writeFileAtomically(paths.dir, paths.currentFile, document, ".current.");
+    const arming = transitions.armPlan();
+    store.writeStatePairs(
+      stateFile,
+      [
+        `mode=${arming.mode}`,
+        `active_slice=${arming.active_slice}`,
+        `verify_green=${arming.verify_green}`,
+        "plan_approval=approved",
+        `plan_approval_digest=${digest}`,
+        `plan_approval_session=${sessionId}`,
+        `plan_snapshot_file=${paths.approvedFile}`,
+        `plan_current_file=${paths.currentFile}`,
+        `plan_revision=${Number(revisionText) + 1}`,
+      ],
+      sessionId,
+      PRESENTED_PLAN_KEYS,
+    );
+    store.logEvent({ event: "plan-superseded", session: sessionId, command: digest });
     return 0;
   });
 }
@@ -133,17 +226,7 @@ export function runApprovePlan(cwd: string, sessionId: string, digest: string): 
       if (!byteIdentical(paths.currentFile, paths.presentedFile)) {
         throw new PlanFailure("the pending plan changed since it was presented; capture it again before approving");
       }
-      if (existsSync(paths.approvedFile)) {
-        if (!store.isPrivateRegularFile(paths.approvedFile)) {
-          throw new PlanFailure("approved snapshot is not a private regular file");
-        }
-        if (!byteIdentical(paths.presentedFile, paths.approvedFile)) {
-          throw new PlanFailure("approved snapshot content disagrees with the pending document");
-        }
-        rmSync(paths.presentedFile, { force: true });
-      } else {
-        renameSync(paths.presentedFile, paths.approvedFile);
-      }
+      promotePresentedSnapshot(paths, "the pending document");
     } else if (!store.isPrivateRegularFile(paths.approvedFile)) {
       throw new PlanFailure("presented plan snapshot is missing");
     }
@@ -212,6 +295,7 @@ export function runCancelApprovedPlan(cwd: string, sessionId: string, digest: st
         "plan_approval=cancelled",
       ],
       sessionId,
+      PRESENTED_PLAN_KEYS,
     );
     store.logEvent({ event: "plan-approval-abandoned", session: sessionId, command: digest });
     return 0;
@@ -271,6 +355,45 @@ function byteIdentical(leftFile: string, rightFile: string): boolean {
   return readFileSync(leftFile).equals(readFileSync(rightFile));
 }
 
+function writePresentedSnapshot(paths: PlanPaths, document: string): void {
+  if (!existsSync(paths.presentedFile)) {
+    store.writeFileAtomically(paths.dir, paths.presentedFile, document, ".snapshot.");
+    return;
+  }
+  if (!store.isPrivateRegularFile(paths.presentedFile)) {
+    throw new PlanFailure("presented snapshot is not a private regular file");
+  }
+  if (readFileSync(paths.presentedFile, "utf8") !== document) {
+    throw new PlanFailure("presented snapshot content disagrees with its approval digest");
+  }
+}
+
+function promotePresentedSnapshot(paths: PlanPaths, promotedLabel: string): void {
+  if (!existsSync(paths.approvedFile)) {
+    renameSync(paths.presentedFile, paths.approvedFile);
+    return;
+  }
+  if (!store.isPrivateRegularFile(paths.approvedFile)) {
+    throw new PlanFailure("approved snapshot is not a private regular file");
+  }
+  if (!byteIdentical(paths.presentedFile, paths.approvedFile)) {
+    throw new PlanFailure(`approved snapshot content disagrees with ${promotedLabel}`);
+  }
+  rmSync(paths.presentedFile, { force: true });
+}
+
+function privatePlanText(file: string, label: string): string {
+  if (!store.isPrivateRegularFile(file)) throw new PlanFailure(`${label} is missing or unsafe: ${file}`);
+  return readFileSync(file, "utf8");
+}
+
+function refuseWhileASliceIsActive(stateFile: string, verb: string): void {
+  const activeSlice = store.readValue(stateFile, "active_slice") ?? "none";
+  if (activeSlice !== "none") {
+    throw new PlanFailure(`${verb} is refused while ${activeSlice} is active; close or abandon the active slice first`);
+  }
+}
+
 export const EXECUTION_AMENDMENT_HEADING = "Execution amendment";
 export const PLAN_MODE_FEEDBACK_HEADING = "Plan Mode feedback";
 
@@ -289,6 +412,14 @@ export const MARKDOWN_HEADING = /^[\s>]*(#{1,6})\s+/;
 
 type SliceBlock = Readonly<{ label: string; text: string }>;
 type OpenSlice = { label: string; boundaryLevel: number; lines: string[] };
+
+function refuseASliceNamingNoCheck(verb: string, document: string): void {
+  const uncheckedSlice = firstSliceNamingNoCheck(document);
+  if (uncheckedSlice === undefined) return;
+  throw new PlanFailure(
+    `${verb} requires slice ${uncheckedSlice} to name ${VERIFY_CHECK_TOKENS.join(" or ")} on its Verify line`,
+  );
+}
 
 function firstSliceNamingNoCheck(document: string): string | undefined {
   return sliceBlocksIn(document).find(({ text }) => !namesAVerifyCheck(text))?.label;
