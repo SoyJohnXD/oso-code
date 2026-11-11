@@ -128,5 +128,6 @@ test("the nightly's certify suites are the OpenCode 2 suites", () => {
     "opencode-v2-tools",
     "opencode-v2-lifecycle",
     "opencode-v2-agent-permissions",
+    "opencode-v2-plan-delta",
   ]);
 });

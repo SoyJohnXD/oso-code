@@ -8,6 +8,7 @@ export const CERTIFY_SUITE_HOSTS = {
   "opencode-v2-tools": "opencode",
   "opencode-v2-lifecycle": "opencode",
   "opencode-v2-agent-permissions": "opencode",
+  "opencode-v2-plan-delta": "opencode",
 };
 
 const REGISTERED_ROW_COUNT_PATTERN = /^ok \d+ - at least (\d+) row\(s\)/m;
