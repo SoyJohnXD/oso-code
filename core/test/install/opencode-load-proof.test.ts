@@ -5,6 +5,7 @@ import path from "node:path";
 import { after, describe, test } from "node:test";
 import { openCodePluginLoadStatus } from "../../src/install/verify-opencode.ts";
 import { failedLoadLinesOf, pluginLoadProofOf } from "../../src/install/opencode-load-proof.ts";
+import { skipUnlessKernelRunsScriptFixtures } from "../support/win32-skip-guards.ts";
 
 const LOADING_LINE = 'timestamp=t level=INFO run=r msg="loading plugin" id=/h/.config/opencode/plugin/oso-code.js entrypoint=file:///h/oso-code.js';
 const FAILED_LINE = 'timestamp=t level=WARN run=r message="failed to load plugin" target=/h/.config/opencode/plugin/oso-code.js cause="x"';
@@ -35,7 +36,7 @@ describe("failedLoadLinesOf", () => {
   });
 });
 
-describe("openCodePluginLoadStatus", () => {
+describe("openCodePluginLoadStatus", { skip: skipUnlessKernelRunsScriptFixtures() }, () => {
   const sandbox = mkdtempSync(path.join(tmpdir(), "oso-load-status-"));
   after(() => rmSync(sandbox, { recursive: true, force: true }));
 

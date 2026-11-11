@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { after, describe, test } from "node:test";
 import { meetsVersionFloor, SUPPORTED_OPENCODE_VERSION } from "../../../src/install/pins.ts";
+import { skipUnlessKernelRunsScriptFixtures } from "../../support/win32-skip-guards.ts";
 import { laneCauseFor, resolveOpenCodeBinaryProbe } from "./opencode-binary.ts";
 
 const sandbox = mkdtempSync(path.join(tmpdir(), "oso-opencode-binary-"));
@@ -24,7 +25,7 @@ describe("the pin is the OpenCode 2 version the certify suites were measured on"
   });
 });
 
-describe("resolveOpenCodeBinaryProbe reads the version line the host prints", () => {
+describe("resolveOpenCodeBinaryProbe reads the version line the host prints", { skip: skipUnlessKernelRunsScriptFixtures() }, () => {
   test("`opencode v2.2.6`, the OpenCode 2 form, resolves at the pin", () => {
     const probe = resolveOpenCodeBinaryProbe(binaryPrinting("v2", "opencode v2.2.6"), SUPPORTED_OPENCODE_VERSION, process.env);
     assert.deepEqual(probe, { kind: "resolved", binary: path.join(sandbox, "v2"), version: "2.2.6", relation: "at-pin" });
