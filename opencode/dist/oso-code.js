@@ -4522,6 +4522,100 @@ function runCapturePlan(cwd, sessionId, digest, document) {
   });
 }
 var PRESENTED_PLAN_KEYS = ["plan_presented_digest", "plan_presented_base", "plan_presented_turn"];
+function heldPlanOf(cwd) {
+  const stateFile = stateFileFor(cwd);
+  const approval = readValue(stateFile, "plan_approval");
+  if (approval === void 0 || approval === "cancelled") return { kind: "none" };
+  if (approval !== "pending" && approval !== "approved") {
+    throw new PlanFailure(`the held plan has an unknown approval state: ${approval}`);
+  }
+  const digest = readValue(stateFile, "plan_approval_digest") ?? "";
+  if (!isValidPlanDigest(digest)) throw new PlanFailure("the plan has no valid digest");
+  const paths = planPaths(stateFile, digest);
+  const snapshotFile = approval === "approved" ? paths.approvedFile : paths.presentedFile;
+  if (readValue(stateFile, "plan_snapshot_file") !== snapshotFile) {
+    throw new PlanFailure("plan state does not name its expected immutable snapshot");
+  }
+  if (readValue(stateFile, "plan_current_file") !== paths.currentFile) {
+    throw new PlanFailure("plan state does not name its operational plan");
+  }
+  return {
+    kind: "held",
+    approval,
+    digest,
+    document: privatePlanText(snapshotFile, "the immutable snapshot"),
+    current: privatePlanText(paths.currentFile, "current plan")
+  };
+}
+function presentedPlanOf(cwd) {
+  const stateFile = stateFileFor(cwd);
+  const [digest, base, turn] = PRESENTED_PLAN_KEYS.map((key) => readValue(stateFile, key));
+  if (digest === void 0 || base === void 0 || turn === void 0 || !isValidPlanDigest(digest)) return void 0;
+  if (!isPrivateRegularFile(planPaths(stateFile, digest).presentedFile)) return void 0;
+  return { digest, base, turn };
+}
+function runPresentPlan(cwd, sessionId, digest, document, turn) {
+  if (!isValidPlanDigest(digest)) throw new PlanFailure("present-plan requires one lowercase SHA-256 digest");
+  if (turn === "" || turn.includes("\n")) throw new PlanFailure("present-plan requires a single-line turn id");
+  const stateFile = stateFileFor(cwd);
+  const paths = planPaths(stateFile, digest);
+  ensurePlanDirectory(paths);
+  if (document.length === 0) throw new PlanFailure("present-plan requires a non-empty plan document");
+  refuseASliceNamingNoCheck("present-plan", document);
+  return withLock(stateFile, sessionId, () => {
+    refuseGateWritesByAForeignSession(stateFile, sessionId);
+    const held = heldPlanOf(cwd);
+    if (held.kind === "none") throw new PlanFailure("present-plan requires a held plan; capture a first plan instead");
+    refuseReplacingAHeldPlanWhileASliceIsActive(cwd, "present-plan");
+    if (held.digest === digest) throw new PlanFailure("the held plan is already this document");
+    writePresentedSnapshot(paths, document);
+    writeStatePairs(
+      stateFile,
+      [`plan_presented_digest=${digest}`, `plan_presented_base=${held.digest}`, `plan_presented_turn=${turn}`],
+      sessionId
+    );
+    logEvent({ event: "plan-presented", session: sessionId, command: digest });
+    return 0;
+  });
+}
+function runSupersedePlan(cwd, sessionId, digest) {
+  if (!isValidPlanDigest(digest)) throw new PlanFailure("supersede-plan requires one lowercase SHA-256 digest");
+  const stateFile = stateFileFor(cwd);
+  const paths = planPaths(stateFile, digest);
+  ensurePlanDirectory(paths);
+  return withLock(stateFile, sessionId, () => {
+    refuseGateWritesByAForeignSession(stateFile, sessionId);
+    if (readValue(stateFile, "plan_presented_digest") !== digest) {
+      throw new PlanFailure("supersede-plan requires the presented plan to carry this digest");
+    }
+    const document = privatePlanText(paths.presentedFile, "presented snapshot");
+    if (heldPlanOf(cwd).kind === "none") throw new PlanFailure("supersede-plan requires a held plan");
+    refuseReplacingAHeldPlanWhileASliceIsActive(cwd, "supersede-plan");
+    const revisionText = readValue(stateFile, "plan_revision") ?? "0";
+    if (!/^[0-9]+$/.test(revisionText)) throw new PlanFailure("current plan has no valid revision");
+    promotePresentedSnapshot(paths, "the presented document");
+    writeFileAtomically(paths.dir, paths.currentFile, document, ".current.");
+    const arming = armPlan();
+    writeStatePairs(
+      stateFile,
+      [
+        `mode=${arming.mode}`,
+        `active_slice=${arming.active_slice}`,
+        `verify_green=${arming.verify_green}`,
+        "plan_approval=approved",
+        `plan_approval_digest=${digest}`,
+        `plan_approval_session=${sessionId}`,
+        `plan_snapshot_file=${paths.approvedFile}`,
+        `plan_current_file=${paths.currentFile}`,
+        `plan_revision=${Number(revisionText) + 1}`
+      ],
+      sessionId,
+      PRESENTED_PLAN_KEYS
+    );
+    logEvent({ event: "plan-superseded", session: sessionId, command: digest });
+    return 0;
+  });
+}
 function runApprovePlan(cwd, sessionId, digest) {
   if (!isValidPlanDigest(digest)) {
     throw new PlanApprovalError("approve-plan requires one lowercase SHA-256 digest");
@@ -4629,6 +4723,19 @@ function promotePresentedSnapshot(paths, promotedLabel) {
   }
   rmSync6(paths.presentedFile, { force: true });
 }
+function privatePlanText(file, label) {
+  if (!isPrivateRegularFile(file)) throw new PlanFailure(`${label} is missing or unsafe: ${file}`);
+  return readFileSync4(file, "utf8");
+}
+function refuseReplacingAHeldPlanWhileASliceIsActive(cwd, verb) {
+  const stateFile = stateFileFor(cwd);
+  const approval = readValue(stateFile, "plan_approval");
+  if (approval === void 0 || approval === "cancelled") return;
+  const activeSlice = readValue(stateFile, "active_slice") ?? "none";
+  if (activeSlice !== "none") {
+    throw new PlanFailure(`${verb} is refused while ${activeSlice} is active; close or abandon the active slice first`);
+  }
+}
 var EXECUTION_AMENDMENT_HEADING = "Execution amendment";
 var PLAN_MODE_FEEDBACK_HEADING = "Plan Mode feedback";
 var VERIFY_CHECK_TOKENS = ["failing-check:", "Verify-exception:"];
@@ -4685,7 +4792,195 @@ function namesAVerifyCheck(blockText) {
 }
 
 // core/src/plan/delta.ts
+var PlanDeltaError = class extends Error {
+};
+function planDeltaOf({ base, next, current }) {
+  if (base.length === 0) throw new PlanDeltaError("plan delta requires a non-empty base document");
+  if (next.length === 0) throw new PlanDeltaError("plan delta requires a non-empty next document");
+  return {
+    segments: alignedSegments(sectionsOf(base), sectionsOf(next)),
+    droppedAmendments: amendmentsIn(current ?? "").filter(({ text }) => !next.includes(text))
+  };
+}
+function renderPlanDelta(delta) {
+  return [...segmentReport(delta.segments), ...droppedAmendmentReport(delta.droppedAmendments), ""].join("\n");
+}
+function planDeltaDigestOf(delta) {
+  return sha256Hex(renderPlanDelta(delta));
+}
+var LINE_WITH_TERMINATOR = /[^\n]*\n|[^\n]+$/g;
+function sectionsOf(document) {
+  const sections = [];
+  const occurrences = /* @__PURE__ */ new Map();
+  const nextOccurrence = (scope) => {
+    const scopeId = JSON.stringify(scope);
+    const occurrence = (occurrences.get(scopeId) ?? 0) + 1;
+    occurrences.set(scopeId, occurrence);
+    return occurrence;
+  };
+  let enclosing;
+  for (const line of document.match(LINE_WITH_TERMINATOR) ?? []) {
+    const heading = headingTextOf(line);
+    const slice = sliceLabelOpening(line);
+    if (heading !== void 0) {
+      const name = slice ?? heading;
+      enclosing = { kind: "heading", heading: name, occurrence: nextOccurrence([name]) };
+      sections.push({ key: enclosing, body: line });
+    } else if (slice !== void 0 && enclosing !== void 0) {
+      const occurrence = nextOccurrence([enclosing.heading, enclosing.occurrence, slice]);
+      sections.push({ key: { kind: "slice", section: enclosing, slice, occurrence }, body: line });
+    } else {
+      const open = sections.at(-1);
+      if (open === void 0) sections.push({ key: { kind: "preamble" }, body: line });
+      else open.body += line;
+    }
+  }
+  return sections.map(({ key, body }) => ({ key, alignmentId: JSON.stringify(key), body }));
+}
+function headingTextOf(line) {
+  const bare = withoutTerminator(line);
+  const marker = MARKDOWN_HEADING.exec(bare);
+  return marker === null ? void 0 : bare.slice(marker[0].length).trim();
+}
+function withoutTerminator(text) {
+  return text.endsWith("\n") ? text.slice(0, -1) : text;
+}
+function alignedSegments(baseSections, nextSections) {
+  const baseIds = baseSections.map(({ alignmentId }) => alignmentId);
+  const nextIds = nextSections.map(({ alignmentId }) => alignmentId);
+  const keptInOrder = idsKeptInOrder(baseIds, nextIds);
+  const pendingRemovals = baseSections.flatMap(
+    ({ key, alignmentId, body }, basePosition) => nextIds.includes(alignmentId) ? [] : [{ kind: "removed", key, base: body, basePosition }]
+  );
+  const segments = [];
+  nextSections.forEach((section, nextPosition) => {
+    const basePosition = baseIds.indexOf(section.alignmentId);
+    if (basePosition === -1) {
+      segments.push({ kind: "added", key: section.key, next: section.body, nextPosition });
+      return;
+    }
+    const moved = !keptInOrder.has(section.alignmentId);
+    if (!moved) {
+      const removedBefore = pendingRemovals.filter((removal) => removal.basePosition < basePosition);
+      segments.push(...pendingRemovals.splice(0, removedBefore.length));
+    }
+    segments.push(alignedSegment(baseSections[basePosition], section, { basePosition, nextPosition, moved }));
+  });
+  return [...segments, ...pendingRemovals];
+}
+function idsKeptInOrder(baseIds, nextIds) {
+  const sharedBase = baseIds.filter((id) => nextIds.includes(id));
+  const sharedNext = nextIds.filter((id) => baseIds.includes(id));
+  const kept = sequenceDiffOf(sharedBase, sharedNext).filter(({ change }) => change === "kept");
+  return new Set(kept.map(({ line }) => line));
+}
+function alignedSegment(baseSection, nextSection, placement) {
+  const fields = { key: nextSection.key, base: baseSection.body, next: nextSection.body, ...placement };
+  if (baseSection.body === nextSection.body) return { kind: "unchanged", ...fields };
+  const onlyWhitespaceDiffers = collapsedWhitespace(baseSection.body) === collapsedWhitespace(nextSection.body);
+  const kind = onlyWhitespaceDiffers ? "format-only" : "changed";
+  return { kind, lines: sequenceDiffOf(linesOf(baseSection.body), linesOf(nextSection.body)), ...fields };
+}
+function collapsedWhitespace(text) {
+  return text.replace(/\s+/g, " ").trim();
+}
+function linesOf(body) {
+  return withoutTerminator(body).split("\n");
+}
+function sequenceDiffOf(base, next) {
+  const width = next.length + 1;
+  const commonFrom = new Uint32Array((base.length + 1) * width);
+  const common = (baseAt2, nextAt2) => commonFrom[baseAt2 * width + nextAt2] ?? 0;
+  for (let baseAt2 = base.length - 1; baseAt2 >= 0; baseAt2 -= 1) {
+    for (let nextAt2 = next.length - 1; nextAt2 >= 0; nextAt2 -= 1) {
+      commonFrom[baseAt2 * width + nextAt2] = base[baseAt2] === next[nextAt2] ? common(baseAt2 + 1, nextAt2 + 1) + 1 : Math.max(common(baseAt2 + 1, nextAt2), common(baseAt2, nextAt2 + 1));
+    }
+  }
+  const changes = [];
+  let baseAt = 0;
+  let nextAt = 0;
+  while (baseAt < base.length && nextAt < next.length) {
+    if (base[baseAt] === next[nextAt]) {
+      changes.push({ change: "kept", line: base[baseAt] });
+      baseAt += 1;
+      nextAt += 1;
+    } else if (common(baseAt + 1, nextAt) >= common(baseAt, nextAt + 1)) {
+      changes.push({ change: "removed", line: base[baseAt] });
+      baseAt += 1;
+    } else {
+      changes.push({ change: "added", line: next[nextAt] });
+      nextAt += 1;
+    }
+  }
+  return [
+    ...changes,
+    ...base.slice(baseAt).map((line) => ({ change: "removed", line })),
+    ...next.slice(nextAt).map((line) => ({ change: "added", line }))
+  ];
+}
 var AMENDMENT_OPENING = new RegExp(`^## (${EXECUTION_AMENDMENT_HEADING}|${PLAN_MODE_FEEDBACK_HEADING}) \u2014 (\\S+)$`);
+var AMENDMENT_METADATA_THEN_TEXT = /^\n(?:- [^\n]*\n)+\n([\s\S]*)$/;
+function amendmentsIn(current) {
+  const opened = [];
+  for (const line of current.split("\n")) {
+    const opening = AMENDMENT_OPENING.exec(line);
+    if (opening === null) opened.at(-1)?.lines.push(line);
+    else opened.push({ heading: opening[1], sliceId: opening[2], lines: [] });
+  }
+  return opened.map(({ heading, sliceId, lines }) => {
+    const metadataThenText = AMENDMENT_METADATA_THEN_TEXT.exec(lines.join("\n"));
+    if (metadataThenText === null) {
+      throw new PlanDeltaError(
+        `current.md amendment "${heading} \u2014 ${sliceId}" carries no metadata block before its text`
+      );
+    }
+    return { heading, sliceId, text: metadataThenText[1].trimEnd() };
+  });
+}
+var SEGMENT_KINDS = ["changed", "added", "removed", "format-only", "unchanged"];
+function segmentReport(segments) {
+  const differing = segments.filter((segment) => segment.kind !== "unchanged" || segment.moved);
+  if (differing.length === 0) return [`No changes: the new plan matches the base in all ${segments.length} sections.`];
+  const unchanged = segments.filter((segment) => segment.kind === "unchanged" && !segment.moved);
+  const counts = SEGMENT_KINDS.map((kind) => `${segments.filter((segment) => segment.kind === kind).length} ${kind}`);
+  return [
+    `Plan delta: ${counts.join(", ")}, ${segments.filter(isMoved).length} moved.`,
+    ...unchanged.length === 0 ? [] : [`Unchanged: ${unchanged.map(({ key }) => labelOf(key)).join(", ")}.`],
+    ...differing.flatMap((segment) => [
+      `${segment.kind} ${labelOf(segment.key)}${isMoved(segment) ? ", moved" : ""}`,
+      ...signedLinesOf(segment).map((line) => `  ${line}`)
+    ])
+  ];
+}
+function isMoved(segment) {
+  return segment.kind !== "added" && segment.kind !== "removed" && segment.moved;
+}
+function labelOf(key) {
+  if (key.kind === "preamble") return "preamble";
+  if (key.kind === "slice") {
+    return `${key.slice}${key.occurrence === 1 ? "" : ` #${key.occurrence}`} in ${labelOf(key.section)}`;
+  }
+  return key.occurrence === 1 ? `"${key.heading}"` : `"${key.heading}" #${key.occurrence}`;
+}
+function signedLinesOf(segment) {
+  if (segment.kind === "added") return linesOf(segment.next).map((line) => `+ ${line}`);
+  if (segment.kind === "removed") return linesOf(segment.base).map((line) => `- ${line}`);
+  if (segment.kind === "unchanged") return [];
+  return segment.lines.flatMap(({ change, line }) => {
+    if (change === "kept") return [];
+    return [`${change === "added" ? "+" : "-"} ${line}`];
+  });
+}
+function droppedAmendmentReport(amendments) {
+  if (amendments.length === 0) return ["Dropped amendments: none."];
+  return [
+    `Dropped amendments: ${amendments.length}.`,
+    ...amendments.flatMap(({ heading, sliceId, text }) => [
+      `- ${heading} \u2014 ${sliceId}`,
+      ...text.split("\n").map((line) => `  ${line}`)
+    ])
+  ];
+}
 
 // core/src/prose/applier-proof.ts
 var APPLIER_PROOF_HEADER = "=== applier_proof ===";
@@ -4829,7 +5124,7 @@ var PLAN_CANCEL_TOOL_ID = "oso_plan_cancel";
 function planApprovalTool(host) {
   return {
     name: PLAN_APPROVAL_TOOL_ID,
-    description: "The approval gate for the oso-code plan mode's phases 1 through 5. Deliver the complete phase-5 document as turn-ending plain text first, then call this tool in a later turn carrying those exact bytes. The operator's answer to the authorization prompt this raises IS the approval: a grant records the approved plan and opens the amendment lane against it, and a refusal comes back as an error approving nothing \u2014 the presentation captured before the prompt stays on disk unpromoted, so this repository is left exactly as unapproved as it was. Nothing this session says or writes can stand in for that answer, and no earlier grant carries over to a later call. A material change to the document invalidates the approval it already carries: present the whole plan again and call this tool again, which binds a fresh digest.",
+    description: "The approval gate for the oso-code plan mode's phases 1 through 5. Deliver the complete phase-5 document as turn-ending plain text first, then call this tool in a later turn carrying those exact bytes. The operator's answer to the authorization prompt this raises IS the approval: a grant records the approved plan and opens the amendment lane against it, and a refusal comes back as an error approving nothing \u2014 the presentation captured before the prompt stays on disk unpromoted, so this repository is left exactly as unapproved as it was. Nothing this session says or writes can stand in for that answer, and no earlier grant carries over to a later call. When a plan is already held and you pass a changed document, the first call returns the delta the harness computed and changes no plan state. Relay that delta as turn-ending text. Then call again in a later turn with the identical plan to raise the authorization prompt. The grant binds the digest of the full new document.",
     input: {
       type: "object",
       properties: {
@@ -4853,17 +5148,95 @@ function planCancelTool(host) {
     execute: async (_input, call) => cancelOnOperatorGrant(host, call)
   };
 }
-async function approveOnOperatorGrant(host, planDocument, call) {
+async function approveOnOperatorGrant(host, plan, call) {
   const directory = await host.directoryOf(call.sessionID);
-  const owner = deriveRootId(directory);
-  const digest = sha256Hex(planDocument);
-  runCapturePlan(directory, owner, digest, planDocument);
-  await askOperator(host, call, PLAN_APPROVAL_TOOL_ID, digest, { digest, characters: planDocument.length });
+  const presentation = { host, call, directory, owner: deriveRootId(directory), digest: sha256Hex(plan), plan };
+  const held = heldPlanReadingOf(directory);
+  if (held.kind === "unreadable") return approveTheWholePlan(presentation, held.cause);
+  if (held.kind === "none") return approveTheWholePlan(presentation);
+  if (held.digest === presentation.digest) {
+    return held.approval === "approved" ? alreadyApproved(presentation) : approveTheWholePlan(presentation);
+  }
+  const presented = presentedPlanOf(directory);
+  if (presented?.digest !== presentation.digest || presented.base !== held.digest) {
+    return presentTheDelta(presentation, held);
+  }
+  return supersedeOnOperatorGrant(presentation, held, presented.turn);
+}
+function heldPlanReadingOf(directory) {
+  try {
+    return heldPlanOf(directory);
+  } catch (err) {
+    if (!(err instanceof PlanFailure)) throw err;
+    return { kind: "unreadable", cause: err.message };
+  }
+}
+async function approveTheWholePlan(presentation, unavailableDelta) {
+  const { host, call, directory, owner, digest, plan } = presentation;
+  refuseReplacingAHeldPlanWhileASliceIsActive(directory, PLAN_APPROVAL_TOOL_ID);
+  runCapturePlan(directory, owner, digest, plan);
+  await askOperator(host, call, PLAN_APPROVAL_TOOL_ID, digest, { digest, characters: plan.length });
   promoteThePresentedPlan(directory, owner, digest);
+  const granted = `The operator granted ${PLAN_APPROVAL_TOOL_ID} for the plan document whose digest is ${digest}. Execution may begin against that exact document, and the operational plan is amendable under ${owner}.`;
+  const metadata = { digest, owner, session: call.sessionID };
+  if (unavailableDelta === void 0) return { content: granted, metadata };
   return {
-    content: `The operator granted ${PLAN_APPROVAL_TOOL_ID} for the plan document whose digest is ${digest}. Execution may begin against that exact document, and the operational plan is amendable under ${owner}.`,
+    content: `The plan delta was unavailable, so the whole plan went to the operator instead: ${unavailableDelta}. Tell the operator the delta was unavailable and why. ${granted}`,
+    metadata: { ...metadata, deltaUnavailable: unavailableDelta }
+  };
+}
+function alreadyApproved({ call, owner, digest }) {
+  return {
+    content: `${PLAN_APPROVAL_TOOL_ID} raised no prompt: the plan document whose digest is ${digest} is already the approved plan, so nothing changed.`,
     metadata: { digest, owner, session: call.sessionID }
   };
+}
+async function presentTheDelta(presentation, held) {
+  const delta = deltaAgainst(held, presentation.plan);
+  if (delta.kind === "unavailable") return approveTheWholePlan(presentation, delta.cause);
+  recordThePresentation(presentation);
+  return {
+    content: `${PLAN_APPROVAL_TOOL_ID} raised no prompt: a plan is already held, so this call returns the delta the harness computed. Relay the delta below to the operator VERBATIM as turn-ending plain text. Then call ${PLAN_APPROVAL_TOOL_ID} again in a LATER turn with the identical plan bytes. This call changed no plan state, and the held plan whose digest is ${held.digest} stays in force.
+
+${delta.text}`,
+    metadata: { step: "delta", digest: presentation.digest, base: held.digest, deltaDigest: delta.digest }
+  };
+}
+async function supersedeOnOperatorGrant(presentation, held, presentedTurn) {
+  const { host, call, directory, owner, digest, plan } = presentation;
+  if (presentedTurn === call.messageID) {
+    throw new Error(`${PLAN_APPROVAL_TOOL_ID} returned the delta for this document earlier in this same turn. Relay it to the operator as turn-ending plain text, then call again in a LATER turn with the identical plan.`);
+  }
+  refuseReplacingAHeldPlanWhileASliceIsActive(directory, PLAN_APPROVAL_TOOL_ID);
+  const delta = deltaAgainst(held, plan);
+  if (delta.kind === "unavailable") return approveTheWholePlan(presentation, delta.cause);
+  await askOperator(host, call, PLAN_APPROVAL_TOOL_ID, digest, {
+    digest,
+    characters: plan.length,
+    base: held.digest,
+    deltaDigest: delta.digest,
+    summary: delta.summary
+  });
+  supersedeTheHeldPlan(directory, owner, digest);
+  return {
+    content: `The operator granted ${PLAN_APPROVAL_TOOL_ID} for the plan document whose digest is ${digest}, over the base plan whose digest is ${held.digest}, through the delta whose digest is ${delta.digest}. The new document superseded the previous plan, whose snapshot stays on disk as history, and the operational plan is amendable under ${owner}. Update the Engram oso/{change}/plan topic with the new document.`,
+    metadata: { digest, owner, session: call.sessionID, base: held.digest, deltaDigest: delta.digest }
+  };
+}
+function deltaAgainst(held, plan) {
+  try {
+    const delta = planDeltaOf({ base: held.document, next: plan, current: held.current });
+    const text = renderPlanDelta(delta);
+    return {
+      kind: "computed",
+      text,
+      digest: planDeltaDigestOf(delta),
+      summary: `${text.split("\n")[0]} Dropped amendments: ${delta.droppedAmendments.length}.`
+    };
+  } catch (err) {
+    if (!(err instanceof PlanDeltaError)) throw err;
+    return { kind: "unavailable", cause: err.message };
+  }
 }
 async function cancelOnOperatorGrant(host, call) {
   const directory = await host.directoryOf(call.sessionID);
@@ -4894,6 +5267,22 @@ function promoteThePresentedPlan(directory, owner, digest) {
     runApprovePlan(directory, owner, digest);
   } catch (err) {
     if (!(err instanceof PlanApprovalError) && !(err instanceof PlanFailure)) throw err;
+    throw new Error(`${PLAN_APPROVAL_TOOL_ID} did not record the operator's approval: ${err.message}`);
+  }
+}
+function recordThePresentation({ call, directory, owner, digest, plan }) {
+  try {
+    runPresentPlan(directory, owner, digest, plan, call.messageID);
+  } catch (err) {
+    if (!(err instanceof PlanFailure) && !(err instanceof GatesOwnedElsewhereError)) throw err;
+    throw new Error(`${PLAN_APPROVAL_TOOL_ID} did not present the changed plan: ${err.message}`);
+  }
+}
+function supersedeTheHeldPlan(directory, owner, digest) {
+  try {
+    runSupersedePlan(directory, owner, digest);
+  } catch (err) {
+    if (!(err instanceof PlanFailure) && !(err instanceof GatesOwnedElsewhereError) && !(err instanceof PlanApprovalError)) throw err;
     throw new Error(`${PLAN_APPROVAL_TOOL_ID} did not record the operator's approval: ${err.message}`);
   }
 }

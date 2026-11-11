@@ -15,7 +15,7 @@ export interface FakeHostContext {
   failEvents: (error: Error) => void;
   eventSubscription: () => AbortSignal | undefined;
   tool: (name: string) => OsoTool;
-  callTool: (name: string, sessionID: string, input: unknown) => ReturnType<OsoTool["execute"]>;
+  callTool: (name: string, sessionID: string, input: unknown, messageID?: string) => ReturnType<OsoTool["execute"]>;
   assertions: () => readonly unknown[];
 }
 
@@ -138,11 +138,11 @@ export function fakeHostContext({
     failEvents: (error) => push({ error }),
     eventSubscription: () => subscription,
     tool: registeredTool,
-    callTool: (name, sessionID, input) => {
+    callTool: (name, sessionID, input, messageID = "msg-1") => {
       const call = {
         sessionID,
         agent: "build",
-        messageID: "msg-1",
+        messageID,
         id: "call-1",
         signal: new AbortController().signal,
         progress: async () => {},

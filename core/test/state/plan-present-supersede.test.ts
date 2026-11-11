@@ -7,6 +7,7 @@ import {
   heldPlanOf,
   PlanFailure,
   presentedPlanOf,
+  refuseReplacingAHeldPlanWhileASliceIsActive,
   runAmendPlan,
   runApprovePlan,
   runCancelApprovedPlan,
@@ -303,6 +304,26 @@ describe(
     }
   },
 );
+
+describe("core/src/state/plan.ts: a plan held on paper is never replaced while a slice is active", () => {
+  const refusal = (sandbox: StateSandbox) => () => refuseReplacingAHeldPlanWhileASliceIsActive(sandbox.cwd, "approve");
+
+  test("a held plan with an active slice is refused, even when its snapshot is gone", () => {
+    holding("approved", (sandbox) => {
+      writeStateValues(sandbox.cwd, OWNER, ["active_slice=wave-1"]);
+      rmSync(path.join(plansDirectoryOf(sandbox), `approved-${HELD_DIGEST}.md`));
+      refusedWith(sandbox, refusal(sandbox), /^approve is refused while wave-1 is active; close or abandon the active slice first$/);
+    });
+  });
+
+  test("a held plan between slices, or no plan held at all, is not refused", () => {
+    holding("pending", (sandbox) => {
+      assert.doesNotThrow(refusal(sandbox));
+      writeStateValues(sandbox.cwd, OWNER, ["active_slice=S2", "plan_approval=cancelled"]);
+      assert.doesNotThrow(refusal(sandbox));
+    });
+  });
+});
 
 describe("core/src/state/plan.ts: the held plan is read from the snapshot its state keys name", () => {
   test("no plan is held before a capture or after a cancellation", () => {

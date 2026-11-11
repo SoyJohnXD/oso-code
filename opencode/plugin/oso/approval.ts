@@ -1,11 +1,21 @@
 import {
   GatesOwnedElsewhereError,
+  heldPlanOf,
   PlanApprovalError,
+  planDeltaDigestOf,
+  PlanDeltaError,
+  planDeltaOf,
   PlanFailure,
+  presentedPlanOf,
+  refuseReplacingAHeldPlanWhileASliceIsActive,
+  renderPlanDelta,
   runApprovePlan,
   runCancelApprovedPlan,
   runCapturePlan,
+  runPresentPlan,
+  runSupersedePlan,
   sha256Hex,
+  type HeldPlan,
 } from "@oso-code/core";
 import { deriveRootId } from "./identity.ts";
 import { approvedPlanFor } from "./plan-state.ts";
@@ -23,9 +33,10 @@ export function planApprovalTool(host: ToolHost): OsoTool {
       + " approved plan and opens the amendment lane against it, and a refusal comes back as an error approving"
       + " nothing — the presentation captured before the prompt stays on disk unpromoted, so this repository is"
       + " left exactly as unapproved as it was. Nothing this session says or writes can stand in for that answer,"
-      + " and no earlier grant carries over to a later call. A material change to the document invalidates the"
-      + " approval it already carries:"
-      + " present the whole plan again and call this tool again, which binds a fresh digest.",
+      + " and no earlier grant carries over to a later call. When a plan is already held and you pass a changed"
+      + " document, the first call returns the delta the harness computed and changes no plan state. Relay that"
+      + " delta as turn-ending text. Then call again in a later turn with the identical plan to raise the"
+      + " authorization prompt. The grant binds the digest of the full new document.",
     input: {
       type: "object",
       properties: {
@@ -58,18 +69,128 @@ export function planCancelTool(host: ToolHost): OsoTool {
 
 type ToolResult = Awaited<ReturnType<OsoTool["execute"]>>;
 
-async function approveOnOperatorGrant(host: ToolHost, planDocument: string, call: OsoToolContext): Promise<ToolResult> {
+type PlanPresentation = Readonly<{
+  host: ToolHost;
+  call: OsoToolContext;
+  directory: string;
+  owner: string;
+  digest: string;
+  plan: string;
+}>;
+
+type HeldDocument = Extract<HeldPlan, { kind: "held" }>;
+
+async function approveOnOperatorGrant(host: ToolHost, plan: string, call: OsoToolContext): Promise<ToolResult> {
   const directory = await host.directoryOf(call.sessionID);
-  const owner = deriveRootId(directory);
-  const digest = sha256Hex(planDocument);
-  runCapturePlan(directory, owner, digest, planDocument);
-  await askOperator(host, call, PLAN_APPROVAL_TOOL_ID, digest, { digest, characters: planDocument.length });
+  const presentation = { host, call, directory, owner: deriveRootId(directory), digest: sha256Hex(plan), plan };
+  const held = heldPlanReadingOf(directory);
+  if (held.kind === "unreadable") return approveTheWholePlan(presentation, held.cause);
+  if (held.kind === "none") return approveTheWholePlan(presentation);
+  if (held.digest === presentation.digest) {
+    return held.approval === "approved" ? alreadyApproved(presentation) : approveTheWholePlan(presentation);
+  }
+  const presented = presentedPlanOf(directory);
+  if (presented?.digest !== presentation.digest || presented.base !== held.digest) {
+    return presentTheDelta(presentation, held);
+  }
+  return supersedeOnOperatorGrant(presentation, held, presented.turn);
+}
+
+function heldPlanReadingOf(directory: string): HeldPlan | Readonly<{ kind: "unreadable"; cause: string }> {
+  try {
+    return heldPlanOf(directory);
+  } catch (err) {
+    if (!(err instanceof PlanFailure)) throw err;
+    return { kind: "unreadable", cause: err.message };
+  }
+}
+
+async function approveTheWholePlan(presentation: PlanPresentation, unavailableDelta?: string): Promise<ToolResult> {
+  const { host, call, directory, owner, digest, plan } = presentation;
+  refuseReplacingAHeldPlanWhileASliceIsActive(directory, PLAN_APPROVAL_TOOL_ID);
+  runCapturePlan(directory, owner, digest, plan);
+  await askOperator(host, call, PLAN_APPROVAL_TOOL_ID, digest, { digest, characters: plan.length });
   promoteThePresentedPlan(directory, owner, digest);
+  const granted = `The operator granted ${PLAN_APPROVAL_TOOL_ID} for the plan document whose digest is ${digest}.`
+    + ` Execution may begin against that exact document, and the operational plan is amendable under ${owner}.`;
+  const metadata = { digest, owner, session: call.sessionID };
+  if (unavailableDelta === undefined) return { content: granted, metadata };
   return {
-    content: `The operator granted ${PLAN_APPROVAL_TOOL_ID} for the plan document whose digest is ${digest}.`
-      + ` Execution may begin against that exact document, and the operational plan is amendable under ${owner}.`,
+    content: `The plan delta was unavailable, so the whole plan went to the operator instead: ${unavailableDelta}.`
+      + ` Tell the operator the delta was unavailable and why. ${granted}`,
+    metadata: { ...metadata, deltaUnavailable: unavailableDelta },
+  };
+}
+
+function alreadyApproved({ call, owner, digest }: PlanPresentation): ToolResult {
+  return {
+    content: `${PLAN_APPROVAL_TOOL_ID} raised no prompt: the plan document whose digest is ${digest} is already the`
+      + " approved plan, so nothing changed.",
     metadata: { digest, owner, session: call.sessionID },
   };
+}
+
+async function presentTheDelta(presentation: PlanPresentation, held: HeldDocument): Promise<ToolResult> {
+  const delta = deltaAgainst(held, presentation.plan);
+  if (delta.kind === "unavailable") return approveTheWholePlan(presentation, delta.cause);
+  recordThePresentation(presentation);
+  return {
+    content: `${PLAN_APPROVAL_TOOL_ID} raised no prompt: a plan is already held, so this call returns the delta the`
+      + " harness computed. Relay the delta below to the operator VERBATIM as turn-ending plain text. Then call"
+      + ` ${PLAN_APPROVAL_TOOL_ID} again in a LATER turn with the identical plan bytes. This call changed no plan`
+      + ` state, and the held plan whose digest is ${held.digest} stays in force.\n\n${delta.text}`,
+    metadata: { step: "delta", digest: presentation.digest, base: held.digest, deltaDigest: delta.digest },
+  };
+}
+
+async function supersedeOnOperatorGrant(
+  presentation: PlanPresentation,
+  held: HeldDocument,
+  presentedTurn: string,
+): Promise<ToolResult> {
+  const { host, call, directory, owner, digest, plan } = presentation;
+  if (presentedTurn === call.messageID) {
+    throw new Error(`${PLAN_APPROVAL_TOOL_ID} returned the delta for this document earlier in this same turn. Relay`
+      + " it to the operator as turn-ending plain text, then call again in a LATER turn with the identical plan.");
+  }
+  refuseReplacingAHeldPlanWhileASliceIsActive(directory, PLAN_APPROVAL_TOOL_ID);
+  const delta = deltaAgainst(held, plan);
+  if (delta.kind === "unavailable") return approveTheWholePlan(presentation, delta.cause);
+  await askOperator(host, call, PLAN_APPROVAL_TOOL_ID, digest, {
+    digest,
+    characters: plan.length,
+    base: held.digest,
+    deltaDigest: delta.digest,
+    summary: delta.summary,
+  });
+  supersedeTheHeldPlan(directory, owner, digest);
+  return {
+    content: `The operator granted ${PLAN_APPROVAL_TOOL_ID} for the plan document whose digest is ${digest}, over`
+      + ` the base plan whose digest is ${held.digest}, through the delta whose digest is ${delta.digest}. The new`
+      + " document superseded the previous plan, whose snapshot stays on disk as history, and the operational plan"
+      + ` is amendable under ${owner}. Update the Engram oso/{change}/plan topic with the new document.`,
+    metadata: { digest, owner, session: call.sessionID, base: held.digest, deltaDigest: delta.digest },
+  };
+}
+
+type DeltaReading =
+  | Readonly<{ kind: "computed"; text: string; digest: string; summary: string }>
+  | Readonly<{ kind: "unavailable"; cause: string }>;
+
+function deltaAgainst(held: HeldDocument, plan: string): DeltaReading {
+  try {
+    const delta = planDeltaOf({ base: held.document, next: plan, current: held.current });
+    const text = renderPlanDelta(delta);
+    return {
+      kind: "computed",
+      text,
+      digest: planDeltaDigestOf(delta),
+      summary: `${text.split("\n")[0]} Dropped amendments: ${delta.droppedAmendments.length}.`,
+    };
+  } catch (err) {
+    if (!(err instanceof PlanDeltaError)) throw err;
+    return { kind: "unavailable", cause: err.message };
+  }
 }
 
 async function cancelOnOperatorGrant(host: ToolHost, call: OsoToolContext): Promise<ToolResult> {
@@ -111,6 +232,25 @@ function promoteThePresentedPlan(directory: string, owner: string, digest: strin
     runApprovePlan(directory, owner, digest);
   } catch (err) {
     if (!(err instanceof PlanApprovalError) && !(err instanceof PlanFailure)) throw err;
+    throw new Error(`${PLAN_APPROVAL_TOOL_ID} did not record the operator's approval: ${err.message}`);
+  }
+}
+
+function recordThePresentation({ call, directory, owner, digest, plan }: PlanPresentation): void {
+  try {
+    runPresentPlan(directory, owner, digest, plan, call.messageID);
+  } catch (err) {
+    if (!(err instanceof PlanFailure) && !(err instanceof GatesOwnedElsewhereError)) throw err;
+    throw new Error(`${PLAN_APPROVAL_TOOL_ID} did not present the changed plan: ${err.message}`);
+  }
+}
+
+function supersedeTheHeldPlan(directory: string, owner: string, digest: string): void {
+  try {
+    runSupersedePlan(directory, owner, digest);
+  } catch (err) {
+    if (!(err instanceof PlanFailure) && !(err instanceof GatesOwnedElsewhereError)
+      && !(err instanceof PlanApprovalError)) throw err;
     throw new Error(`${PLAN_APPROVAL_TOOL_ID} did not record the operator's approval: ${err.message}`);
   }
 }

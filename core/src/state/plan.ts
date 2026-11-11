@@ -137,7 +137,7 @@ export function runPresentPlan(cwd: string, sessionId: string, digest: string, d
     store.refuseGateWritesByAForeignSession(stateFile, sessionId);
     const held = heldPlanOf(cwd);
     if (held.kind === "none") throw new PlanFailure("present-plan requires a held plan; capture a first plan instead");
-    refuseWhileASliceIsActive(stateFile, "present-plan");
+    refuseReplacingAHeldPlanWhileASliceIsActive(cwd, "present-plan");
     if (held.digest === digest) throw new PlanFailure("the held plan is already this document");
     writePresentedSnapshot(paths, document);
     store.writeStatePairs(
@@ -162,7 +162,7 @@ export function runSupersedePlan(cwd: string, sessionId: string, digest: string)
     }
     const document = privatePlanText(paths.presentedFile, "presented snapshot");
     if (heldPlanOf(cwd).kind === "none") throw new PlanFailure("supersede-plan requires a held plan");
-    refuseWhileASliceIsActive(stateFile, "supersede-plan");
+    refuseReplacingAHeldPlanWhileASliceIsActive(cwd, "supersede-plan");
     const revisionText = store.readValue(stateFile, "plan_revision") ?? "0";
     if (!/^[0-9]+$/.test(revisionText)) throw new PlanFailure("current plan has no valid revision");
     promotePresentedSnapshot(paths, "the presented document");
@@ -387,7 +387,10 @@ function privatePlanText(file: string, label: string): string {
   return readFileSync(file, "utf8");
 }
 
-function refuseWhileASliceIsActive(stateFile: string, verb: string): void {
+export function refuseReplacingAHeldPlanWhileASliceIsActive(cwd: string, verb: string): void {
+  const stateFile = store.stateFileFor(cwd);
+  const approval = store.readValue(stateFile, "plan_approval");
+  if (approval === undefined || approval === "cancelled") return;
   const activeSlice = store.readValue(stateFile, "active_slice") ?? "none";
   if (activeSlice !== "none") {
     throw new PlanFailure(`${verb} is refused while ${activeSlice} is active; close or abandon the active slice first`);

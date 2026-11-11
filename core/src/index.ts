@@ -27,6 +27,7 @@ export {
   PlanApprovalError,
   PlanFailure,
   presentedPlanOf,
+  refuseReplacingAHeldPlanWhileASliceIsActive,
   runApprovePlan,
   runCancelApprovedPlan,
   runCapturePlan,

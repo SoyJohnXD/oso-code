@@ -331,6 +331,33 @@ test("a refused permission assertion leaves the plan unapproved and the refusal 
   }
 });
 
+test("the registered approval tool returns the delta for a changed plan and supersedes it from a later turn", async () => {
+  const fixture = seedRailFixture("oso-v2-tool-delta");
+  const revised = `${PLAN_DOCUMENT}## Riesgos\nNone.\n`;
+  try {
+    const host = fakeHostContext({ directory: fixture.repo, sessionDirectories: { "ses-delta": fixture.repo } });
+    await entry.setup(host.context);
+    const approve = (plan: string, messageID?: string) =>
+      underRailFixtureHome(fixture, () => host.callTool("oso_plan_approve", "ses-delta", { plan }, messageID));
+    await approve(PLAN_DOCUMENT);
+    const delta = await approve(revised);
+    assert.equal(delta.metadata?.step, "delta");
+    assert.equal(host.assertions().length, 1);
+    await assert.rejects(approve(revised), /same turn/);
+    await approve(revised, "msg-2");
+    const asked = host.assertions() as Array<{ resources: string[]; metadata: Record<string, unknown> }>;
+    assert.deepEqual(asked.slice(1).map(({ resources, metadata }) => [resources, metadata.base]), [
+      [[sha256Hex(revised)], sha256Hex(PLAN_DOCUMENT)],
+    ]);
+    underFixtureHome(fixture.home, () => {
+      assert.equal(readValue(stateFileFor(fixture.repo), "plan_approval_digest"), sha256Hex(revised));
+      assert.equal(readValue(stateFileFor(fixture.repo), "plan_revision"), "1");
+    });
+  } finally {
+    rmSync(fixture.base, { recursive: true, force: true });
+  }
+});
+
 function deadPid(): number {
   const gone = spawnSync("true");
   assert.notEqual(gone.pid, undefined);
