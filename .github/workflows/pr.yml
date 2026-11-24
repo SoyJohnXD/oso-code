@@ -41,7 +41,6 @@ jobs:
         run: |
           bash -n bootstrap/*.sh
           bash -n tools/*.sh
-          bash -n plugin/hooks/*.sh
           bash -n plugin/git-hooks/pre-commit
           bash -n tests/fixtures/*.sh
       - name: OpenCode unit suite (ubuntu only — Windows bring-up is C3's, tracked in docs/rewrite/ts-core-roadmap.md)

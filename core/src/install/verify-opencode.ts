@@ -110,7 +110,6 @@ const SHELL_SYNTAX_SOURCES: readonly Readonly<{ directory: readonly string[]; su
   { directory: ["bootstrap"], suffix: ".sh" },
   { directory: ["bootstrap", "lib"], suffix: ".sh" },
   { directory: ["tools"], suffix: ".sh" },
-  { directory: ["plugin", "hooks"], suffix: ".sh" },
   { directory: ["tests"], suffix: ".sh" },
   { directory: ["tests", "fixtures"], suffix: ".sh" },
 ];

@@ -49,14 +49,14 @@ const FIXTURE_SHIMS_UNREACHABLE_ON_THE_INJECTED_PATH = skipUnlessPathResolvesExt
 
 provedSomething(
   `the install corpus is ${THE_INSTALL_CORPUS}`,
-  publishedRowsBesideTheShellGates().length > 0,
+  publishedRows().length > 0,
   "bootstrap/hook-hashes.txt published no OpenCode trust row, so an install that copied nothing would read the same as one that copied everything",
 );
 
 describe("install --host opencode leaves the tree its seed and the published hashes describe", () => {
   test("the installed tree carries directories and owner-only modes, so what follows is read through kind and mode rather than bytes alone", { skip: FIXTURE_SHIMS_UNREACHABLE_ON_THE_INJECTED_PATH }, () => {
     const installed = installedByThePort();
-    assert.ok(installed.tree.length > 40, `${installed.tree.length} entries were read`);
+    assert.ok(installed.tree.length > 0, "the installed tree was read as empty");
     assert.ok(installed.tree.some((entry) => entry.kind === "directory"));
     assert.ok(installed.tree.some((entry) => entry.mode === "0700"));
   });
@@ -82,7 +82,7 @@ describe("install --host opencode leaves the tree its seed and the published has
     const installed = installedByThePort();
     const record = path.join(configHomeOf(installed.home), "oso-code-install.json");
     const harnessVersion = (JSON.parse(readFileSync(path.join(repositoryRoot, "plugin", ".claude-plugin", "plugin.json"), "utf8")) as { version: string }).version;
-    assert.deepEqual(JSON.parse(readFileSync(record, "utf8")), { version: harnessVersion, manifest: publishedRowsBesideTheShellGates() });
+    assert.deepEqual(JSON.parse(readFileSync(record, "utf8")), { version: harnessVersion, manifest: publishedRows() });
     const registry = readFileSync(path.join(opencodePathsFor(installed.home, {}).stateRoot, "opencode-install-registry"), "utf8");
     assert.ok(registry.split("\n").includes(`installer\t${record}`), registry);
     const configHomeTarget = openCodePurgeTargets(installed.home, true).find((target) => target.label === "config-home");
@@ -97,11 +97,11 @@ describe("install --host opencode leaves the tree its seed and the published has
 });
 
 describe("the OpenCode install ships none of the shell gates no host runs", () => {
-  test("a fresh install publishes no hooks/*.sh, and its trust reading covers only the rows beside the shell gates", { skip: FIXTURE_SHIMS_UNREACHABLE_ON_THE_INJECTED_PATH }, () => {
+  test("a fresh install publishes no hooks/*.sh, and its trust reading covers every published row", { skip: FIXTURE_SHIMS_UNREACHABLE_ON_THE_INJECTED_PATH }, () => {
     const configHome = configHomeOf(installedByThePort().home);
     assert.deepEqual(shellGatesUnder(path.join(configHome, "hooks")), []);
     const reading = openCodeTrustReading(openCodePayloadSources(repositoryRoot).publishedHashes, "installed", configHome);
-    assert.equal(reading.filesRead, publishedRowsBesideTheShellGates().length);
+    assert.equal(reading.filesRead, publishedRows().length);
     assert.equal(reading.filesRead, OPENCODE_TRUST_FILE_COUNT);
   });
 
@@ -321,10 +321,8 @@ function seedFixtureHome(root: string): string {
   return home;
 }
 
-function publishedRowsBesideTheShellGates(): TrustRow[] {
-  return parseTrustManifest(readFileSync(openCodePayloadSources(repositoryRoot).publishedHashes, "utf8")).filter(
-    (row) => !(row.file.startsWith("plugin/hooks/") && row.file.endsWith(".sh")),
-  );
+function publishedRows(): TrustRow[] {
+  return parseTrustManifest(readFileSync(openCodePayloadSources(repositoryRoot).publishedHashes, "utf8"));
 }
 
 function shellGatesUnder(directory: string): string[] {

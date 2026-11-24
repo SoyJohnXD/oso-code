@@ -14,7 +14,6 @@ const SHELL_DIRECT_CHILD_GLOBS: readonly { dir: string; ext: string }[] = [
   { dir: "bootstrap", ext: ".bat" },
   { dir: "bootstrap", ext: ".ps1" },
   { dir: "tools", ext: ".sh" },
-  { dir: "plugin/hooks", ext: ".sh" },
   { dir: "tests", ext: ".sh" },
   { dir: "tests/fixtures", ext: ".sh" },
 ];

@@ -62,16 +62,8 @@ function requiredPaths(): string[] {
     `plugin/${BUNDLE_DIRECTORY}/${PRECOMMIT_BUNDLE}`,
     `plugin/${BUNDLE_DIRECTORY}/package.json`,
     "plugin/git-hooks/pre-commit",
-    "plugin/hooks/block-commit-until-green.sh",
-    "plugin/hooks/block-edits-without-slice.sh",
-    "plugin/hooks/warn-stale-state.sh",
-    "plugin/hooks/cleanup-state.sh",
-    "plugin/hooks/block-prod-deploy.sh",
     "plugin/bin/oso-state",
     "plugin/bin/package.json",
-    "plugin/hooks/lib.sh",
-    "plugin/hooks/lexer.sh",
-    "plugin/hooks/reanchor-after-compact.sh",
     OPENCODE_PLUGIN_BUNDLE,
   ];
 }

@@ -24,11 +24,9 @@ describe("parseTrustManifest", () => {
 });
 
 describe("trustDivergences", () => {
-  const excludeLegacy = (relative: string): boolean => relative.startsWith("legacy/");
-
   test("reports missing-manifest when the manifest file is not there", () => {
     const manifest = path.join(sandbox, "absent.txt");
-    assert.deepEqual(trustDivergences(manifest, excludeLegacy, () => undefined), [{ file: manifest, state: { kind: "missing-manifest" } }]);
+    assert.deepEqual(trustDivergences(manifest, () => undefined), [{ file: manifest, state: { kind: "missing-manifest" } }]);
   });
 
   test("a matching digest publishes nothing", () => {
@@ -36,7 +34,7 @@ describe("trustDivergences", () => {
     const target = path.join(sandbox, "gate.js");
     writeFileSync(target, "payload");
     writeFileSync(manifest, `${DIGEST}  plugin/dist/gate.js\n`);
-    assert.deepEqual(trustDivergences(manifest, excludeLegacy, () => target), []);
+    assert.deepEqual(trustDivergences(manifest, () => target), []);
   });
 
   test("a mismatched digest reports the actual hash", () => {
@@ -44,7 +42,7 @@ describe("trustDivergences", () => {
     const target = path.join(sandbox, "stale-gate.js");
     writeFileSync(target, "tampered");
     writeFileSync(manifest, `${DIGEST}  plugin/dist/gate.js\n`);
-    assert.deepEqual(trustDivergences(manifest, excludeLegacy, () => target), [
+    assert.deepEqual(trustDivergences(manifest, () => target), [
       { file: "plugin/dist/gate.js", state: { kind: "mismatch", actual: sha256Hex("tampered") } },
     ]);
   });
@@ -52,7 +50,7 @@ describe("trustDivergences", () => {
   test("a target the resolver cannot place is outside-the-trust-set", () => {
     const manifest = path.join(sandbox, "unmapped.txt");
     writeFileSync(manifest, `${DIGEST}  unknown/path.js\n`);
-    assert.deepEqual(trustDivergences(manifest, excludeLegacy, () => undefined), [
+    assert.deepEqual(trustDivergences(manifest, () => undefined), [
       { file: "unknown/path.js", state: { kind: "outside-the-trust-set" } },
     ]);
   });
@@ -60,7 +58,7 @@ describe("trustDivergences", () => {
   test("a resolved target that is not there reports missing", () => {
     const manifest = path.join(sandbox, "missing-target.txt");
     writeFileSync(manifest, `${DIGEST}  plugin/dist/gate.js\n`);
-    assert.deepEqual(trustDivergences(manifest, excludeLegacy, () => path.join(sandbox, "never-written.js")), [
+    assert.deepEqual(trustDivergences(manifest, () => path.join(sandbox, "never-written.js")), [
       { file: "plugin/dist/gate.js", state: { kind: "missing" } },
     ]);
   });
@@ -68,15 +66,9 @@ describe("trustDivergences", () => {
   test("a malformed published digest is reported without touching the filesystem", () => {
     const manifest = path.join(sandbox, "malformed.txt");
     writeFileSync(manifest, "not-hex  plugin/dist/gate.js\n");
-    assert.deepEqual(trustDivergences(manifest, excludeLegacy, () => manifest), [
+    assert.deepEqual(trustDivergences(manifest, () => manifest), [
       { file: "plugin/dist/gate.js", state: { kind: "malformed-published-hash" } },
     ]);
-  });
-
-  test("the exclusion predicate skips a host's own foreign rows entirely", () => {
-    const manifest = path.join(sandbox, "excluded.txt");
-    writeFileSync(manifest, `${DIGEST}  legacy/config-template.toml\n`);
-    assert.deepEqual(trustDivergences(manifest, excludeLegacy, () => manifest), []);
   });
 
   test("hashes an invalid-UTF-8 target by its raw bytes rather than a lossy utf8 decode", () => {
@@ -85,6 +77,6 @@ describe("trustDivergences", () => {
     const invalidUtf8Payload = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0xff, 0xfe, 0x00, 0x01, 0xc0, 0x80]);
     writeFileSync(target, invalidUtf8Payload);
     writeFileSync(manifest, `${sha256Hex(invalidUtf8Payload)}  plugin/dist/gate.js\n`);
-    assert.deepEqual(trustDivergences(manifest, excludeLegacy, () => target), []);
+    assert.deepEqual(trustDivergences(manifest, () => target), []);
   });
 });

@@ -144,7 +144,6 @@ jobs:
         run: |
           bash -n bootstrap/*.sh
           bash -n tools/*.sh
-          bash -n plugin/hooks/*.sh
           bash -n plugin/git-hooks/pre-commit
           bash -n tests/fixtures/*.sh
       - name: PowerShell script syntax

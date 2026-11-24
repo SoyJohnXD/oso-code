@@ -8,7 +8,6 @@ import { readTrackedText, trackedRepositoryFiles, type TrackedFileText } from ".
 const DIRECT_CHILD_GLOBS: readonly { dir: string; ext: string }[] = [
   { dir: "bootstrap", ext: ".sh" },
   { dir: "bootstrap/lib", ext: ".sh" },
-  { dir: "plugin/hooks", ext: ".sh" },
   { dir: "tests", ext: ".sh" },
   { dir: "tests/fixtures", ext: ".sh" },
   { dir: "tools", ext: ".sh" },

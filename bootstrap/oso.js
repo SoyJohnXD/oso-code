@@ -938,10 +938,9 @@ function parseTrustManifest(text) {
   });
 }
 var RAW_INSTALLED_BYTES = (_relative, target) => readFileSync5(target);
-function trustDivergences(manifestFile, isExcluded, resolveTarget, bytesOf = RAW_INSTALLED_BYTES) {
+function trustDivergences(manifestFile, resolveTarget, bytesOf = RAW_INSTALLED_BYTES) {
   if (!isReadableRegularFile(manifestFile)) return [{ file: manifestFile, state: { kind: "missing-manifest" } }];
-  const trusted = parseTrustManifest(readFileSync5(manifestFile, "utf8")).filter((row) => !isExcluded(row.file));
-  return trustRowDivergences(trusted, resolveTarget, bytesOf);
+  return trustRowDivergences(parseTrustManifest(readFileSync5(manifestFile, "utf8")), resolveTarget, bytesOf);
 }
 function trustRowDivergences(rows, resolveTarget, bytesOf = RAW_INSTALLED_BYTES) {
   return rows.flatMap((row) => divergenceOf(row, resolveTarget, bytesOf));
@@ -2553,12 +2552,12 @@ function openCodeTrustTargetUnder(rootKind, root, published) {
 function openCodeTrustReading(manifestFile, rootKind, root) {
   return {
     filesRead: openCodeTrustRows(manifestFile).length,
-    divergences: trustDivergences(manifestFile, isClaudeOnlyShellGate, (published) => openCodeTrustTargetUnder(rootKind, root, published))
+    divergences: trustDivergences(manifestFile, (published) => openCodeTrustTargetUnder(rootKind, root, published))
   };
 }
 function openCodeTrustRows(manifestFile) {
   if (!isReadableRegularFile(manifestFile)) return [];
-  return parseTrustManifest(readFileSync9(manifestFile, "utf8")).filter((row) => !isClaudeOnlyShellGate(row.file));
+  return parseTrustManifest(readFileSync9(manifestFile, "utf8"));
 }
 function publishedDistFileNames(manifestFile) {
   return openCodeTrustRows(manifestFile).map((row) => row.file).filter((published) => published.startsWith("plugin/dist/")).map((published) => published.slice("plugin/dist/".length));
@@ -2566,9 +2565,6 @@ function publishedDistFileNames(manifestFile) {
 function trustDivergenceLine(divergence) {
   const state = divergence.state;
   return `${divergence.file} ${state.kind === "mismatch" ? state.actual : state.kind}`;
-}
-function isClaudeOnlyShellGate(published) {
-  return published.startsWith("plugin/hooks/") && published.endsWith(".sh");
 }
 
 // core/src/install/profile.ts
@@ -3460,7 +3456,6 @@ var SHELL_SYNTAX_SOURCES = [
   { directory: ["bootstrap"], suffix: ".sh" },
   { directory: ["bootstrap", "lib"], suffix: ".sh" },
   { directory: ["tools"], suffix: ".sh" },
-  { directory: ["plugin", "hooks"], suffix: ".sh" },
   { directory: ["tests"], suffix: ".sh" },
   { directory: ["tests", "fixtures"], suffix: ".sh" }
 ];

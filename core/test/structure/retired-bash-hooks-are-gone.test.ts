@@ -1,39 +1,69 @@
 import assert from "node:assert/strict";
-import { existsSync } from "node:fs";
-import path from "node:path";
 import { describe, test } from "node:test";
 import { provedSomething } from "../support/proved.ts";
-import { posixRepositoryPath } from "../support/repository-paths.ts";
-import { repositoryRoot } from "../support/state-sandbox.ts";
-import { readTrackedText, trackedRepositoryFiles } from "../support/tracked-files.ts";
+import { readTrackedText, trackedRepositoryFiles, type TrackedFileText } from "../support/tracked-files.ts";
 
-const RETIRED_HOOKS = ["auto-continue.sh", "persist-state-bin.sh", "warn-stale-version.sh"];
-const CITATION = new RegExp(RETIRED_HOOKS.map((name) => name.replaceAll(".", "\\.")).join("|"));
+const HOOKS_DIRECTORY = "plugin/hooks/";
+const HOOKS_MANIFEST = `${HOOKS_DIRECTORY}hooks.json`;
+const RETIRED_SCRIPT_NAMES = [
+  "block-commit-until-green",
+  "block-edits-without-slice",
+  "block-prod-deploy",
+  "cleanup-state",
+  "lexer",
+  "lib",
+  "reanchor-after-compact",
+  "warn-stale-state",
+];
+const RETIRED_SCRIPT_PATHS = RETIRED_SCRIPT_NAMES.map((name) => `${HOOKS_DIRECTORY}${name}.sh`);
+const RETIRED_CITATION = new RegExp(`${HOOKS_DIRECTORY}(${RETIRED_SCRIPT_NAMES.join("|")})\\.sh`);
+const SHIPPED_PREFIXES = ["plugin/", "opencode/", "core/src/", "bootstrap/", ".github/"];
 
-const UNSCANNED_PREFIXES = ["docs/", "core/test/fixtures/", "plugin/dist/", "opencode/dist/", "bootstrap/"];
-const UNSCANNED_FILES = new Set(["CHANGELOG.md", "core/src/routes/routes.ts", posixRepositoryPath(import.meta.filename)]);
-const SCANNED_FLOOR = 300;
+function retiredScriptsStanding(files: readonly string[]): string[] {
+  return files.filter((file) => RETIRED_SCRIPT_PATHS.includes(file));
+}
 
-const scannedFiles = trackedRepositoryFiles().filter(
-  (file) => !UNSCANNED_FILES.has(file) && !UNSCANNED_PREFIXES.some((prefix) => file.startsWith(prefix)),
-);
+function strayHooksDirectoryFiles(files: readonly string[]): string[] {
+  return files.filter((file) => file.startsWith(HOOKS_DIRECTORY) && file !== HOOKS_MANIFEST);
+}
+
+function retiredScriptCitations({ file, text }: TrackedFileText): string[] {
+  return text.split("\n").flatMap((line, index) => (RETIRED_CITATION.test(line) ? [`${file}:${index + 1}`] : []));
+}
+
+const trackedFiles = trackedRepositoryFiles();
+const shippedFiles = trackedFiles.filter((file) => SHIPPED_PREFIXES.some((prefix) => file.startsWith(prefix)));
 
 provedSomething(
-  `${scannedFiles.length} file(s) were scanned for citations of the retired hooks`,
-  scannedFiles.length >= SCANNED_FLOOR,
-  `only ${scannedFiles.length} file(s) were scanned, under the ${SCANNED_FLOOR} floor`,
+  `${shippedFiles.length} shipped file(s) were scanned and the walk saw ${HOOKS_MANIFEST}`,
+  shippedFiles.length > 0 && trackedFiles.includes(HOOKS_MANIFEST),
+  "the walk found no shipped file or never reached the hooks manifest, so this check searched nothing",
 );
 
-describe("the three retired bash hooks are gone and cited nowhere", () => {
-  test("none of the three files exists under plugin/hooks", () => {
-    const standing = RETIRED_HOOKS.filter((name) => existsSync(path.join(repositoryRoot, "plugin/hooks", name)));
-    assert.deepEqual(standing, []);
+describe("the retired bash hook scripts are gone from the tree", () => {
+  test("none of the retired scripts is tracked and the hooks directory holds only the manifest", () => {
+    assert.deepEqual(retiredScriptsStanding(trackedFiles), []);
+    assert.deepEqual(strayHooksDirectoryFiles(trackedFiles), []);
   });
 
-  test("no prose or test outside the event-label rows names one of them", () => {
-    const citations = scannedFiles
-      .map(readTrackedText)
-      .flatMap(({ file, text }) => text.split("\n").flatMap((line, index) => (CITATION.test(line) ? [`${file}:${index + 1}`] : [])));
+  test("no shipped file cites a retired script by its hooks path", () => {
+    const citations = shippedFiles.map(readTrackedText).flatMap(retiredScriptCitations);
     assert.deepEqual(citations, [], citations.join("\n"));
+  });
+});
+
+describe("the scanners flag what they exist to flag", () => {
+  test("a re-added script is flagged and the manifest alone passes", () => {
+    const files = [HOOKS_MANIFEST, `${HOOKS_DIRECTORY}lib.sh`];
+    assert.deepEqual(retiredScriptsStanding(files), [`${HOOKS_DIRECTORY}lib.sh`]);
+    assert.deepEqual(strayHooksDirectoryFiles(files), [`${HOOKS_DIRECTORY}lib.sh`]);
+    assert.deepEqual(strayHooksDirectoryFiles([HOOKS_MANIFEST]), []);
+  });
+
+  test("a planted citation is flagged and text without one passes", () => {
+    const cites = { file: "synthetic.ts", text: `spawnSync("bash", ["${HOOKS_DIRECTORY}block-prod-deploy.sh"]);` };
+    const clean = { file: "synthetic.ts", text: `read ${HOOKS_MANIFEST} and label the gate "block-prod-deploy.sh"` };
+    assert.deepEqual(retiredScriptCitations(cites), ["synthetic.ts:1"]);
+    assert.deepEqual(retiredScriptCitations(clean), []);
   });
 });
