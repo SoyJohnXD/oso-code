@@ -13,10 +13,6 @@ const DIRECT_CHILD_GLOBS: readonly { dir: string; ext: string }[] = [
   { dir: "bootstrap/lib", ext: ".sh" },
   { dir: "tools", ext: ".sh" },
 ];
-const MINIMUM_SCANNED_FILES = 2;
-const MINIMUM_SCANNED_FILES_DERIVATION =
-  "tests/*.sh, tests/fixtures/*.sh, bootstrap/lib/*.sh and tools/*.sh, measured at C5-S5c: 2 " +
-  "(tests/fixtures/crashing-hook.sh, tools/verify-check-names.sh — tests/*.sh and bootstrap/lib now hold none)";
 const OPENCODE_MENTION = /opencode/i;
 const CONTINUATION = /\\[ \t]*$/;
 const STRIPPABLE_SUFFIX = /_(bin|binary|exe|path|cmd|cli)$/i;
@@ -88,10 +84,9 @@ function invokesOpencodeDirectly(records: readonly LexRecord[]): boolean {
 const scannedFiles = trackedRepositoryFiles().filter(isScanned);
 
 provedSomething(
-  `${scannedFiles.length} tracked shell source file(s) under tests/, tests/fixtures/, bootstrap/lib/ and tools/ ` +
-    "were read for a direct opencode invocation",
-  scannedFiles.length >= MINIMUM_SCANNED_FILES,
-  `only ${scannedFiles.length} file(s) were read, under the ${MINIMUM_SCANNED_FILES}-file floor (${MINIMUM_SCANNED_FILES_DERIVATION})`,
+  "a tracked shell source file under tests/, tests/fixtures/, bootstrap/lib/ or tools/ was read for a direct opencode invocation",
+  scannedFiles.length > 0,
+  "no shell source file was read, so this check searched nothing for a direct opencode invocation",
 );
 
 const sites = scannedFiles

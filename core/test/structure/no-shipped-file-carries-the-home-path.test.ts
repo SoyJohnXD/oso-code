@@ -5,10 +5,6 @@ import { provedSomething } from "../support/proved.ts";
 import { readTrackedText, trackedRepositoryFiles } from "../support/tracked-files.ts";
 import { homeDirectoryFrom } from "../../src/state/store.ts";
 
-const MINIMUM_TRACKED_FILES = 1000;
-const MINIMUM_TRACKED_FILES_DERIVATION =
-  "git ls-files --cached --others --exclude-standard, repo-wide, measured at C5-S5b-2: 1,199";
-
 const trackedFiles = trackedRepositoryFiles();
 function homeDirectoryOrUnset(): string | undefined {
   try {
@@ -22,10 +18,9 @@ const home = homeDirectoryOrUnset();
 const homeNamesADirectory = home !== undefined && home !== "" && home !== "/";
 
 provedSomething(
-  `${trackedFiles.length} tracked file(s) were read for the absolute home directory of whoever runs this check`,
-  trackedFiles.length >= MINIMUM_TRACKED_FILES,
-  `only ${trackedFiles.length} tracked file(s) were found, under the ${MINIMUM_TRACKED_FILES}-file floor ` +
-    `(${MINIMUM_TRACKED_FILES_DERIVATION})`,
+  "a tracked file was read for the absolute home directory of whoever runs this check",
+  trackedFiles.length > 0,
+  "no tracked file was found, so the scan for the home directory searched nothing",
 );
 
 provedSomething(

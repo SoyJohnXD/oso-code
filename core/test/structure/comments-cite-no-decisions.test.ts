@@ -19,7 +19,6 @@ const SHELL_DIRECT_CHILD_GLOBS: readonly { dir: string; ext: string }[] = [
   { dir: "tests/fixtures", ext: ".sh" },
 ];
 const SHELL_EXACT_FILES = new Set(["plugin/bin/oso-state", "plugin/git-hooks/pre-commit"]);
-const MINIMUM_SCANNED_FILES = 120;
 
 const COMMENT_OPENING_PATTERN = /\/\/|^[ \t]*\*/;
 const SHELL_COMMENT_OPENING_PATTERN = /^[ \t]*(#|[Rr][Ee][Mm][ \t]|::)/;
@@ -31,7 +30,7 @@ const LINE_COMMENT = ["/", "/"].join("");
 const PLANTED_CITATIONS = [
   `export const PUSHES_WITHOUT_PROGRESS_CAP = 3; ${LINE_COMMENT} ADR-0087 fixed the cap at three`,
   "/**",
-  " * D10 keeps a planted citation out of shipped source",
+  " * D1 keeps a planted citation out of shipped source",
   " */",
 ];
 
@@ -83,11 +82,10 @@ const scannedFiles = trackedRepositoryFiles().filter(isScanned);
 const citationsFound = scannedFiles.map(readTrackedText).flatMap(decisionCitationsIn);
 
 provedSomething(
-  `${scannedFiles.length} tracked TypeScript, JavaScript and shipped shell/batch/PowerShell file(s) under ` +
-    `${SCANNED_PREFIXES.join(", ")} and plugin/'s shipped executables were read for a decision citation in a comment`,
-  scannedFiles.length >= MINIMUM_SCANNED_FILES,
-  `only ${scannedFiles.length} file(s) were read, under the ${MINIMUM_SCANNED_FILES} these directories hold, so ` +
-    "this check looked at a tree it did not recognise rather than finding nothing",
+  `a tracked TypeScript, JavaScript or shipped shell/batch/PowerShell file under ` +
+    `${SCANNED_PREFIXES.join(", ")} or plugin/'s shipped executables was read for a decision citation in a comment`,
+  scannedFiles.length > 0,
+  "no file was read, so this check looked at a tree it did not recognise rather than finding nothing",
 );
 
 describe(

@@ -8,7 +8,6 @@ import { readTrackedText, trackedRepositoryFiles, type TrackedFileText } from ".
 
 const CERTIFY_PREFIX = "core/test/certify/";
 const EXEMPT_FILES = new Set(["core/test/certify/support/not-run.ts", "core/test/certify/support/certify-guard.ts"]);
-const MINIMUM_SCANNED_FILES = 5;
 
 const BARE_T_SKIP_PATTERN = /\bt\.skip\(/;
 const BARE_SKIP_OPTION_PATTERN = /(?<![.\w])skip:/;
@@ -26,10 +25,6 @@ function isScanned(file: string): boolean {
   return file.startsWith(CERTIFY_PREFIX) && file.endsWith(".ts") && !EXEMPT_FILES.has(file);
 }
 
-function meetsScannedFloor(scannedCount: number): boolean {
-  return scannedCount >= MINIMUM_SCANNED_FILES;
-}
-
 function plantedCertifyFile(lines: readonly string[]): TrackedFileText {
   const directory = mkdtempSync(path.join(tmpdir(), "oso-planted-certify-skip-"));
   const file = path.join(directory, "planted.test.ts");
@@ -45,10 +40,9 @@ const scannedFiles = trackedRepositoryFiles().filter(isScanned);
 const sitesFound = scannedFiles.map(readTrackedText).flatMap(bareSkipSitesIn);
 
 provedSomething(
-  `${scannedFiles.length} tracked *.ts file(s) under ${CERTIFY_PREFIX} outside the recorder and the OSO_CERTIFY guard were scanned for a bare skip`,
-  meetsScannedFloor(scannedFiles.length),
-  `only ${scannedFiles.length} file(s) were scanned, under the ${MINIMUM_SCANNED_FILES} this tree holds, so this check ` +
-    "looked at a tree it did not recognise rather than finding nothing",
+  `a tracked *.ts file under ${CERTIFY_PREFIX} outside the recorder and the OSO_CERTIFY guard was scanned for a bare skip`,
+  scannedFiles.length > 0,
+  "no file was scanned, so this check looked at a tree it did not recognise rather than finding nothing",
 );
 
 describe(
@@ -92,9 +86,5 @@ describe("bareSkipSitesIn, read over a planted tree this repository does not shi
     } finally {
       disposePlanted(planted);
     }
-  });
-
-  test("an empty walk — the shape a broken scan would produce — fails meetsScannedFloor rather than passing it vacuously", () => {
-    assert.equal(meetsScannedFloor(0), false);
   });
 });

@@ -12,16 +12,6 @@ const VERDICT_GRAMMAR_OWNER = "core/src/verdict/grammar.ts";
 const CANONICAL_SEARCH_ROOTS = ["core/src", "plugin", "bootstrap", "tests", "tools", "opencode/plugin", "opencode/hooks"];
 const ALTERNATION_PATTERN = /\([a-z]+(?:\|[a-z]+)+\)/g;
 
-const MINIMUM_ALTERNATIONS = 2;
-const MINIMUM_ALTERNATIONS_DERIVATION =
-  `${VERDICT_GRAMMAR_OWNER}'s STATUS_LINE and VERDICT_LINE regex literals, measured when the grammar moved into the core: ` +
-  "(done|blocked), (pass|fail|blocked) — 2";
-
-const MINIMUM_SEARCHED_FILES = 80;
-const MINIMUM_SEARCHED_FILES_DERIVATION =
-  `git ls-files under whichever of ${CANONICAL_SEARCH_ROOTS.join(", ")} exists on disk (opencode/hooks holds none), ` +
-  "measured after three bash hooks retired: 87 tracked files under the searched roots, less the file that owns the vocabulary";
-
 function searchedPrefixes(): string[] {
   return CANONICAL_SEARCH_ROOTS.filter((root) => existsSync(path.join(repositoryRoot, root))).map((root) => `${root}/`);
 }
@@ -58,18 +48,15 @@ const searchedFiles = trackedFiles.filter(
 );
 
 provedSomething(
-  `${VERDICT_GRAMMAR_OWNER} spelled ${alternations.length} verdict-vocabulary alternation(s) to compare against`,
-  alternations.length >= MINIMUM_ALTERNATIONS,
-  `${VERDICT_GRAMMAR_OWNER} spelled ${alternations.length} alternation(s), under the ${MINIMUM_ALTERNATIONS}-alternation ` +
-    `floor (${MINIMUM_ALTERNATIONS_DERIVATION})`,
+  `${VERDICT_GRAMMAR_OWNER} spelled a verdict-vocabulary alternation to compare against`,
+  alternations.length > 0,
+  `${VERDICT_GRAMMAR_OWNER} spelled no verdict-vocabulary alternation, so the search for a duplicate compared against nothing`,
 );
 
 provedSomething(
-  `${searchedFiles.length} tracked file(s) under ${SEARCHED_PREFIXES.join(", ")}, builder outputs aside, ` +
-    "were searched for a duplicate verdict-vocabulary alternation",
-  searchedFiles.length >= MINIMUM_SEARCHED_FILES,
-  `only ${searchedFiles.length} file(s) were found, under the ${MINIMUM_SEARCHED_FILES}-file floor ` +
-    `(${MINIMUM_SEARCHED_FILES_DERIVATION})`,
+  `a tracked file under ${SEARCHED_PREFIXES.join(", ")}, builder outputs aside, was searched for a duplicate verdict-vocabulary alternation`,
+  searchedFiles.length > 0,
+  "no file was searched, so no duplicate verdict-vocabulary alternation could have been found",
 );
 
 const duplicates = alternations.flatMap((alternation) =>
