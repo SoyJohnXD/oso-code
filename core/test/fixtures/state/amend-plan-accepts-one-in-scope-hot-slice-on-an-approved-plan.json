@@ -30,7 +30,7 @@
     "amend-plan",
     "slice-3"
   ],
-  "stdin": "### Slice 3 — approval regression\n\n- Goal: cover native approval.\n- Files: tests/hooks-test.sh\n- Verify: bash tests/hooks-test.sh\n- Depends-on: Slice 2",
+  "stdin": "### Slice 3 — approval regression\n\n- Goal: cover native approval.\n- Files: tests/approval.test.ts\n- Verify: npm test\n- Depends-on: Slice 2",
   "expect": {
     "exit": 0,
     "state_after": {

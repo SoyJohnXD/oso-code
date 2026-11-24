@@ -15,8 +15,7 @@ import { skipUnlessChmodMakesFilesUnreadable } from "../support/win32-skip-guard
 const ABANDONED_STATE = `${STATE_ROOT_THESE_TESTS_SPELL}/abandoned-unreadable.state`;
 
 test(
-  "teardown gate: the abandoned-state sweep prunes an unreadable state file with no readability check first " +
-    "(port of plugin/hooks/cleanup-state.sh:79-91, preserved residual, no parity fixture)",
+  "teardown gate: the abandoned-state sweep prunes an unreadable state file with no readability check first",
   { skip: skipUnlessChmodMakesFilesUnreadable() },
   () => {
     withStateSandbox("workspace", (sandbox) => {

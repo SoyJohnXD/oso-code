@@ -61,9 +61,8 @@ const TS_USAGE = BASH_USAGE.replace(
   );
 
 test(
-  "the TypeScript CLI's usage text equals the bash's (read from 8c54fd8:plugin/bin/oso-state:7-29) " +
-    "plus exactly the two verbs G6 adds, close-slice and deny-pattern add, the scan verb C1-D3 adds, the close verb, " +
-    "the watch verb, the report verb and the mark verb",
+  "the CLI's usage text names the set, get, show, clear, event, plan and journal verbs " +
+    "plus close-slice, deny-pattern add, scan, close, watch, report and mark",
   () => {
     const result = spawnSync(
       process.execPath,

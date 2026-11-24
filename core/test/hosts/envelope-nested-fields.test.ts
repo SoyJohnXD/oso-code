@@ -98,8 +98,7 @@ const A_PAYLOAD_JSON_PARSE_REFUSES = '{"tool_input":{"x":{"command":"echo benign
 
 describe(
   "core/src/hosts/envelope.ts: a field is the first string that key carries in a parent-before-child walk of " +
-    "the parsed payload, which is what the bash reader's jq took wherever the platform had jq " +
-    "(plugin/hooks/lib.sh:320-327), never the first textual occurrence in the raw bytes",
+    "the parsed payload, never the first textual occurrence in the raw bytes",
   () => {
     for (const { payload, field, value } of PARENT_BEFORE_CHILD) {
       test(`${JSON.stringify(field)} reads ${JSON.stringify(value)} out of ${JSON.stringify(payload)}`, () => {
@@ -107,7 +106,7 @@ describe(
       });
     }
 
-    test("a nested decoy no longer wins the command line the production boundary lexes", () => {
+    test("a nested decoy never wins the command line the production boundary lexes", () => {
       assert.equal(spawnedEnvelope(A_DECOY_UNDER_THE_TOOL_INPUT, {}).commandLine, "vercel deploy --prod");
     });
   },
@@ -115,8 +114,7 @@ describe(
 
 describe(
   "core/src/hosts/envelope.ts: a payload JSON.parse refuses falls back to the byte-ordered pattern reader, " +
-    "which is the jq-absent branch of plugin/hooks/lib.sh:320-327 and the reading the payload-unparseable " +
-    "allow path is built on",
+    "the reading the payload-unparseable allow path is built on",
   () => {
     test("the truncated payload still yields the pattern reader's first textual occurrence", () => {
       assert.equal(jsonField(A_PAYLOAD_JSON_PARSE_REFUSES, "command"), "echo benign");
@@ -129,8 +127,7 @@ describe(
 );
 
 describe(
-  "core/src/hosts/envelope.ts: the escaped fields stay on the pattern reader whatever the payload parses to, " +
-    "because plugin/hooks/lib.sh:336-343 read them that way with jq present and absent alike",
+  "core/src/hosts/envelope.ts: the escaped fields stay on the pattern reader whatever the payload parses to",
   () => {
     test("the escaped prompt keeps the byte-first reading the parsed prompt no longer takes", () => {
       const payload = '{"tool_input":{"prompt":"decoy prompt"},"prompt":"the real prompt"}';
@@ -155,7 +152,7 @@ describe(
       assert.equal(jsonField(A_DECOY_BURIED_UNDER_THE_REAL_COMMAND, "command"), "the real command");
     });
 
-    test(`a decoy buried ${NESTING_PAST_THE_RECURSION} level(s) in an earlier sibling wins, as jq's walk has it`, () => {
+    test(`a decoy buried ${NESTING_PAST_THE_RECURSION} level(s) in an earlier sibling wins, because the walk reads an earlier sibling's subtree first`, () => {
       assert.equal(jsonField(A_DECOY_BURIED_IN_AN_EARLIER_SIBLING, "command"), "the decoy");
     });
   },
@@ -163,8 +160,8 @@ describe(
 
 describe(
   "core/src/hosts/envelope.ts: a node's own field is read before any descendant of it, which is what keeps " +
-    "JavaScript's hoisting of integer-like keys ahead of their siblings — an ordering jq does not share — off " +
-    "every field a hook payload names at a fixed place",
+    "JavaScript's hoisting of integer-like keys ahead of their siblings — an ordering the payload's own text " +
+    "does not have — off every field a hook payload names at a fixed place",
   () => {
     for (const { payload, field, value } of AN_INTEGER_KEY_JAVASCRIPT_HOISTS) {
       test(`${JSON.stringify(field)} reads ${JSON.stringify(value)} out of ${JSON.stringify(payload)}`, () => {

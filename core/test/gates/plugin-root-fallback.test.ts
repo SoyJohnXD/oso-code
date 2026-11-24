@@ -35,21 +35,10 @@ test(
 );
 
 test(
-  "pluginRootAbove finds the real plugin root from the Claude bundle location " +
-    "(plugin/dist/gate.js, per docs/rewrite/ts-core-roadmap.md G2)",
+  "pluginRootAbove finds the real plugin root from the Claude bundle location (plugin/dist/gate.js)",
   () => {
     const moduleDirectory = path.join(repositoryRoot, "plugin", "dist");
     assert.equal(pluginRootAbove(moduleDirectory), EXPECTED_PLUGIN_ROOT);
-  },
-);
-
-test(
-  "the depth-three-then-literal-plugin formula this replaces lands outside the repository " +
-    "from the bundle location, never inside plugin/ (evidence for the finding this test regresses)",
-  () => {
-    const brokenFromDist = path.resolve(path.join(repositoryRoot, "plugin", "dist"), "..", "..", "..", "plugin");
-    assert.notEqual(brokenFromDist, EXPECTED_PLUGIN_ROOT);
-    assert.equal(brokenFromDist, path.resolve(repositoryRoot, "..", "plugin"));
   },
 );
 
@@ -67,8 +56,7 @@ test("pluginRootAbove fails closed when no ancestor carries a bin/oso-state, ins
 
 test(
   "pluginRootAbove skips a decoy ancestor's unrelated bin/oso-state and fails closed instead of resolving " +
-    "to it (reachable today: a PATH shim at ~/.local/bin/oso-state sits above ~/.local/share/oso-code/runtime, " +
-    "the finding's reproduced scenario)",
+    "to it (a PATH shim at ~/.local/bin/oso-state sits above ~/.local/share/oso-code/runtime)",
   () => {
     const decoyAncestor = mkdtempSync(path.join(tmpdir(), "oso-plugin-decoy-"));
     mkdirSync(path.join(decoyAncestor, "bin"), { recursive: true });
@@ -88,8 +76,7 @@ test(
 
 test(
   "pluginRootAbove resolves the real installed Claude Code plugin cache layout — bin/, hooks/, agents/, " +
-    "skills/ and git-hooks/ sit flat under the install root with no plugin/ wrapper (verified against " +
-    "~/.claude/plugins/cache/oso-code/oso-code/0.25.0/, finding A)",
+    "skills/ and git-hooks/ sit flat under the install root with no plugin/ wrapper",
   () => {
     const root = flatInstallFixture(
       "oso-claude-cache-",
@@ -117,8 +104,7 @@ test(
 
 test(
   "stale gate: with CLAUDE_PLUGIN_ROOT and OSO_STATE_BIN both unset, the remedy names the real " +
-    "plugin/bin/oso-state prefix, not only its trailing --session ... clear substring " +
-    "(the gap named in the finding: parity fixtures assert only the trailing substring)",
+    "plugin/bin/oso-state prefix, not only its trailing --session ... clear substring",
   () => {
     withStateSandbox("workspace", (sandbox) => {
       sandbox.seed({ [STATE_FILE]: "mode=plan\nsession=other-session\n" });

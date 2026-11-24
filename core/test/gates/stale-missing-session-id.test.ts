@@ -6,8 +6,7 @@ import { spawnedEnvelope } from "../../src/hosts/spawned.ts";
 import { STATE_FILE, withStateSandbox } from "../support/state-sandbox.ts";
 
 test(
-  "stale gate: a missing session id never suppresses the advisory, so a foreign session's state still warns " +
-    "(port of bea25f6:plugin/hooks/warn-stale-state.sh:8-13, preserved residual, no parity fixture)",
+  "stale gate: a missing session id never suppresses the advisory, so a foreign session's state still warns",
   () => {
     withStateSandbox("workspace", (sandbox) => {
       sandbox.seed({ [STATE_FILE]: "mode=plan\nsession=other-session\n" });

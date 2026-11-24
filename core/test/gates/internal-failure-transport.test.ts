@@ -70,10 +70,7 @@ describe(
     );
 
     test(
-      "stale: HOME unset — reached through isDirectory(stateRootDirectory())'s own homeDirectory() throw, " +
-        "the port of plugin/hooks/warn-stale-state.sh:9's [ -d \"$OSO_STATE_DIR\" ] (which, like every check " +
-        "in a script that sources lib.sh, cannot even run once HOME is unset — measured: env -u HOME " +
-        "warn-stale-state.sh dies at lib.sh:260, exit 1, before line 9) — is loud",
+      "stale: HOME unset — reached through isDirectory(stateRootDirectory())'s own homeDirectory() throw — is loud",
       () => {
         const run = withStateSandbox("workspace", (sandbox) => {
           const stdin = sandbox.expandJson('{"session_id":"test-session","cwd":"{cwd}"}');
@@ -130,9 +127,7 @@ describe(
 
     test(
       "teardown: HOME unset — reached through stateRootDirectory()'s own homeDirectory() throw while listing " +
-        ".state files, the port of plugin/hooks/cleanup-state.sh sourcing lib.sh (measured: env -u HOME " +
-        "cleanup-state.sh dies at lib.sh:260, exit 1) — is loud, not the exit-0 silent this slice's round 2 " +
-        "shipped",
+        ".state files — is loud, never an exit-0 silent teardown",
       () => {
         const run = withStateSandbox("workspace", (sandbox) => {
           const stdin = sandbox.expandJson('{"session_id":"test-session","cwd":"{cwd}"}');
@@ -144,8 +139,7 @@ describe(
 
     test(
       "autocontinue: HOME unset — reached through stateFileFor's own homeDirectory() throw while naming the " +
-        "run's state, the port of the retired bash autocontinue hook (which, like every check in a script that " +
-        "sources lib.sh, cannot even run once HOME is unset) — is loud",
+        "run's state — is loud",
       () => {
         const run = withStateSandbox("workspace", (sandbox) => {
           const stdin = sandbox.expandJson(

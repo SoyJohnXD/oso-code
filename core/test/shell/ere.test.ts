@@ -381,7 +381,7 @@ provedSomething(
 );
 
 for (const [rule, cases] of Object.entries(ERE_DIALECT)) {
-  describe(`core/src/shell/ere.ts: ${rule} (read from plugin/hooks/block-prod-deploy.sh:130)`, () => {
+  describe(`core/src/shell/ere.ts: ${rule}`, () => {
     for (const { pattern, command, bites } of cases) {
       test(`${JSON.stringify(pattern)} ${bites ? "bites" : "spares"} ${JSON.stringify(command)}`, () => {
         assert.equal(ereReads(pattern, command), bites ? BITES : SPARES);
@@ -393,8 +393,7 @@ for (const [rule, cases] of Object.entries(ERE_DIALECT)) {
 describe(
   "core/src/shell/ere.ts: a quantifier on a zero-width construct binds to the assertion itself, so ?, *, {0} " +
     "and {,m} let zero repetitions satisfy it while + and a low-bounded interval keep it mandatory — every row " +
-    "below re-derived from /usr/bin/grep -E 3.12 under LC_ALL=C rather than from the reader it checks " +
-    "(read from plugin/hooks/block-prod-deploy.sh:130)",
+    "below re-derived from /usr/bin/grep -E 3.12 under LC_ALL=C rather than from the reader it checks",
   () => {
     for (const { pattern, denies } of A_QUANTIFIER_ON_A_ZERO_WIDTH_CONSTRUCT) {
       for (const command of ZERO_WIDTH_CLASS_COMMANDS) {
@@ -421,8 +420,7 @@ describe(
 );
 
 describe(
-  "core/src/shell/ere.ts: a pattern grep exits 2 on matches nothing, exactly as the bash gate's own grep " +
-    "does (read from plugin/hooks/block-prod-deploy.sh:130,134)",
+  "core/src/shell/ere.ts: a pattern grep exits 2 on matches nothing, as grep itself reads it",
   () => {
     for (const { rejected, neighbour, command } of PATTERNS_GREP_REJECTS) {
       test(`${JSON.stringify(rejected)} spares ${JSON.stringify(command)}`, () => {
@@ -437,7 +435,7 @@ describe(
 );
 
 describe(
-  "core/src/shell/ere.ts: PINNED HOLE — GNU 3.12 reads a leading brace before a POSIX-class bracket two " +
+  "core/src/shell/ere.ts: GNU grep 3.12 reads a leading brace before a POSIX-class bracket two " +
     "mutually exclusive ways, so the reader takes the literal one it takes everywhere else",
   () => {
     for (const { pattern, command, bites } of A_LEADING_BRACE_BEFORE_A_POSIX_CLASS) {

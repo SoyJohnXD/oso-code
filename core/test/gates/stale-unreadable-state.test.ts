@@ -13,8 +13,7 @@ import {
 import { skipUnlessChmodMakesFilesUnreadable } from "../support/win32-skip-guards.ts";
 
 test(
-  "stale gate: an unreadable state file reads the same as a foreign session's, so it still warns " +
-    "(port of plugin/hooks/warn-stale-state.sh:11-13, preserved residual, no parity fixture)",
+  "stale gate: an unreadable state file reads the same as a foreign session's, so it still warns",
   { skip: skipUnlessChmodMakesFilesUnreadable() },
   () => {
     withStateSandbox("workspace", (sandbox) => {

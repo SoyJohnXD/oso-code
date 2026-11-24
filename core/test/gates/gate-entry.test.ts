@@ -125,7 +125,7 @@ provedSomething(
   "the gate entry-point suite carries no case, so it proved nothing about how a gate fails closed",
 );
 
-describe("core/src/gates/dispatch.ts: port tests read from the gate scripts, never parity evidence", () => {
+describe("core/src/gates/dispatch.ts: a gate entry point that cannot run its gate blocks the call instead of opening it", () => {
   test("an unknown gate name blocks the call instead of opening the gate", () => {
     const run = judge(["frobnicate"], ARMED_RED_STATE, bashEnvelope("git commit -m x"));
     assert.equal(run.exit, 2);
@@ -139,7 +139,7 @@ describe("core/src/gates/dispatch.ts: port tests read from the gate scripts, nev
       const run = judge(["unknown", ...argv], ARMED_RED_STATE, TOOL_ENVELOPE);
       assert.equal(run.exit, 2);
       assert.equal(run.stdout, "");
-      assert.equal(run.stderr, gateErrorLineTheBashPrints(`the unknown-tool gate configuration (${cause})`));
+      assert.equal(run.stderr, gateErrorLine(`the unknown-tool gate configuration (${cause})`));
       assert.deepEqual(run.events, []);
     });
   }
@@ -152,7 +152,7 @@ describe("core/src/gates/dispatch.ts: port tests read from the gate scripts, nev
     });
     assert.equal(run.exit, 2);
     assert.equal(run.stdout, "");
-    assert.equal(run.stderr, `${gateErrorLineTheBashPrints("the commit gate")}oso-code: cause: ${unresolvedHomeCause()}\n`);
+    assert.equal(run.stderr, `${gateErrorLine("the commit gate")}oso-code: cause: ${unresolvedHomeCause()}\n`);
     assert.deepEqual(run.events, []);
   });
 });
@@ -280,14 +280,14 @@ describe("core/src/gates/proddeploy.ts: a word carrying a command the shell runs
   }
 });
 
-describe("core/src/gates/proddeploy.ts: a deny pattern grep exits 2 on denies nothing, as the bash gate's own grep does", () => {
-  test(`${A_PATTERN_GREP_EXITS_TWO_ON} leaves a command it aims squarely at alone (read from plugin/hooks/block-prod-deploy.sh:130,134)`, () => {
+describe("core/src/gates/proddeploy.ts: a deny pattern grep exits 2 on denies nothing", () => {
+  test(`${A_PATTERN_GREP_EXITS_TWO_ON} leaves a command it aims squarely at alone`, () => {
     const run = judge(["proddeploy"], armedRunDenying(A_PATTERN_GREP_EXITS_TWO_ON), bashEnvelope("abc-prod"));
     assert.deepEqual({ exit: run.exit, stdout: run.stdout, stderr: run.stderr }, { exit: 0, stdout: "", stderr: "" });
     assert.deepEqual(run.events, []);
   });
 
-  test("a later pattern still bites, because grep's exit 2 ends the pattern and not the file (read from plugin/hooks/block-prod-deploy.sh:129-133)", () => {
+  test("a later pattern still bites, because grep's exit 2 ends the pattern and not the file", () => {
     const run = judge(
       ["proddeploy"],
       armedRunDenying(`${A_PATTERN_GREP_EXITS_TWO_ON}\n^ship-it`),
@@ -299,7 +299,7 @@ describe("core/src/gates/proddeploy.ts: a deny pattern grep exits 2 on denies no
     assert.match(run.stdout, /this repository denies this command while one is/);
   });
 
-  test(`${A_PCRE_SPELLING_GREP_READS_AS_ERE} bites the command grep's own ERE reading bites (read from plugin/hooks/block-prod-deploy.sh:130)`, () => {
+  test(`${A_PCRE_SPELLING_GREP_READS_AS_ERE} bites the command grep's own ERE reading bites`, () => {
     const run = judge(["proddeploy"], armedRunDenying(A_PCRE_SPELLING_GREP_READS_AS_ERE), bashEnvelope("ship-prod"));
     assert.equal(run.exit, 0);
     assert.match(run.stdout, /"permissionDecision":"deny"/);
@@ -329,13 +329,13 @@ describe("core/src/gates/proddeploy.ts: a deny pattern grep exits 2 on denies no
     assert.deepEqual({ exit: run.exit, stdout: run.stdout, stderr: run.stderr }, { exit: 0, stdout: "", stderr: "" });
   });
 
-  test("a pattern the port does read leaves a command it does not aim at alone", () => {
+  test("a pattern the reader does read leaves a command it does not aim at alone", () => {
     const run = judge(["proddeploy"], armedRunDenying("^ship-it"), bashEnvelope("npm run build"));
     assert.deepEqual({ exit: run.exit, stdout: run.stdout, stderr: run.stderr }, { exit: 0, stdout: "", stderr: "" });
   });
 });
 
-function gateErrorLineTheBashPrints(subject: string): string {
+function gateErrorLine(subject: string): string {
   return `oso-code: ${subject} failed unexpectedly and blocked this call instead of opening the gate. No remedy is known for this failure.\n`;
 }
 
