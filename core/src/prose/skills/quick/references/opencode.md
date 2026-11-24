@@ -20,7 +20,7 @@ The installed plugin publishes `OSO_AGENT`, a repository-derived identity comput
 
 ## Naming and invoking the harness's own skills
 
-Installed plugin skills carry NO namespace on this host: every skill auto-registers as a slash command under its own `name`, and the installed `opencode.json` carries `permission.skill` deny rules for the three operator-only modes, hiding them from the model while the slash command stays (D11; empirically verified on the pinned host). Operator-invoked modes use that command spelling; an orchestrator opens and reads auxiliary `SKILL.md` files in the installed tree.
+Installed plugin skills carry NO namespace on this host: every skill auto-registers as a slash command under its own `name`, and the installed `opencode.json` carries `permission.skill` deny rules for the three operator-only modes, hiding them from the model while the slash command stays. Operator-invoked modes use that command spelling; an orchestrator opens and reads auxiliary `SKILL.md` files in the installed tree.
 
 | The body says | Here it is | Reached by |
 | --- | --- | --- |
@@ -28,7 +28,7 @@ Installed plugin skills carry NO namespace on this host: every skill auto-regist
 | the DEBUG mode | `/oso-debug` | the operator invokes `/oso-debug` — a mode is never model-invoked |
 | the quality-pass judge | `/oso-quality-pass` | read its installed `SKILL.md` and run it inline, the way it runs on every host |
 
-Forked judges and operational agents are the exception to inline reading. The child's final message is the `subagent` tool's result, and a launch that errors, times out, or returns an empty verdict blocks the flow and never falls through. Launch the judge adapters by their `opencode/agents/` contracts, passing SKILL PATH and ARGUMENTS in the payload (D10).
+Forked judges and operational agents are the exception to inline reading. The child's final message is the `subagent` tool's result, and a launch that errors, times out, or returns an empty verdict blocks the flow and never falls through. Launch the judge adapters by their `opencode/agents/` contracts, passing SKILL PATH and ARGUMENTS in the payload.
 
 ## Front-surface binding
 
