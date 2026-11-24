@@ -10,7 +10,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        include:
+          - os: ubuntu-latest
+            test-budget-seconds: 240
+          - os: windows-latest
+            test-budget-seconds: 420
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -24,7 +28,12 @@ jobs:
       - name: Typecheck the core workspace
         run: npm run typecheck
       - name: Core unit tests
+        env:
+          OSO_TEST_BUDGET_SECONDS: ${{ matrix.test-budget-seconds }}
         run: npm test
+      - name: Size report
+        shell: bash
+        run: npm run size
       - name: Confirm the committed oso-state bundle matches source
         run: npm run check
       - name: Shell script syntax
