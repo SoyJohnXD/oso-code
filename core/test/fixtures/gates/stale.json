@@ -1,0 +1,235 @@
+{
+  "gate": "stale",
+  "cases": [
+    {
+      "name": "stale gate: a value that is not a slug reaches the resume route as the placeholder, never as itself",
+      "argv": [],
+      "env": {},
+      "state_before": {
+        ".local/state/oso-code/{repo}.state": "mode=plan\nsession=other-session\nroadmap=Not A Slug; rm -rf /\n"
+      },
+      "cwd": "workspace",
+      "stdin": "{\"session_id\":\"test-session\",\"cwd\":\"{cwd}\"}",
+      "expect": {
+        "exit": 0,
+        "stdout": {
+          "contains": [
+            "/oso-code:roadmap {roadmap}"
+          ]
+        }
+      }
+    },
+    {
+      "name": "stale gate: SessionStart still names another session's file whose unattended run is running, though it holds no mode",
+      "argv": [],
+      "env": {},
+      "state_before": {
+        ".local/state/oso-code/{repo}.state": "roadmap=auth-hardening\nauto=running\nsession=other-session\n"
+      },
+      "cwd": "workspace",
+      "stdin": "{\"session_id\":\"test-session\",\"cwd\":\"{cwd}\"}",
+      "expect": {
+        "exit": 0,
+        "stdout": {
+          "contains": [
+            "\"hookEventName\":\"SessionStart\"",
+            "{repo}.state) was left by another session",
+            "/oso-code:roadmap auth-hardening"
+          ]
+        },
+        "stderr": ""
+      }
+    },
+    {
+      "name": "stale gate: SessionStart names nothing when only a foreign repository's state exists",
+      "argv": [],
+      "env": {},
+      "state_before": {
+        ".local/state/oso-code/other-session.state": "mode=plan\nsession=other-session\n"
+      },
+      "cwd": "workspace",
+      "stdin": "{\"session_id\":\"test-session\",\"cwd\":\"{cwd}\"}",
+      "expect": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    },
+    {
+      "name": "stale gate: SessionStart names this repository's own stale state, with the Claude slash route and a session-scoped clear command",
+      "argv": [],
+      "env": {},
+      "state_before": {
+        ".local/state/oso-code/{repo}.state": "mode=plan\nsession=other-session\n"
+      },
+      "cwd": "workspace",
+      "stdin": "{\"session_id\":\"test-session\",\"cwd\":\"{cwd}\"}",
+      "expect": {
+        "exit": 0,
+        "stdout": {
+          "contains": [
+            "\"hookEventName\":\"SessionStart\"",
+            "{repo}.state) was left by another session",
+            "/oso-code:plan {change}",
+            "--session \\\"test-session\\\" clear"
+          ]
+        },
+        "stderr": ""
+      }
+    },
+    {
+      "name": "stale gate: OpenCode stale-state guidance uses its own registered slash command and clears the identity its own shell.env published",
+      "argv": [],
+      "env": {
+        "OSO_HOST": "opencode",
+        "OSO_AGENT": "aa11bb22cc33dd44"
+      },
+      "state_before": {
+        ".local/state/oso-code/{repo}.state": "mode=plan\nsession=other-session\n"
+      },
+      "cwd": "workspace",
+      "stdin": "{\"session_id\":\"test-session\",\"cwd\":\"{cwd}\"}",
+      "expect": {
+        "exit": 0,
+        "stdout": {
+          "contains": [
+            "/oso-plan {change}",
+            "--session \\\"aa11bb22cc33dd44\\\" clear"
+          ]
+        }
+      }
+    },
+    {
+      "name": "stale gate: OpenCode gets the roadmap resume route as the command its installer registers",
+      "argv": [],
+      "env": {
+        "OSO_HOST": "opencode",
+        "OSO_AGENT": "aa11bb22cc33dd44"
+      },
+      "state_before": {
+        ".local/state/oso-code/{repo}.state": "mode=plan\nsession=other-session\nroadmap=auth-hardening\n"
+      },
+      "cwd": "workspace",
+      "stdin": "{\"session_id\":\"test-session\",\"cwd\":\"{cwd}\"}",
+      "expect": {
+        "exit": 0,
+        "stdout": {
+          "contains": [
+            "/oso-roadmap auth-hardening"
+          ]
+        }
+      }
+    },
+    {
+      "name": "stale gate: the stale-state signal routes a roadmap in flight to the roadmap it names, with the disarm and the clear",
+      "argv": [],
+      "env": {},
+      "state_before": {
+        ".local/state/oso-code/{repo}.state": "mode=plan\nsession=other-session\nroadmap=auth-hardening\n"
+      },
+      "cwd": "workspace",
+      "stdin": "{\"session_id\":\"test-session\",\"cwd\":\"{cwd}\"}",
+      "expect": {
+        "exit": 0,
+        "stdout": {
+          "contains": [
+            "/oso-code:roadmap auth-hardening",
+            "--session \\\"test-session\\\" set roadmap=none",
+            "--session \\\"test-session\\\" clear"
+          ]
+        }
+      }
+    },
+    {
+      "name": "stale gate: SessionStart says nothing about another session's file that holds only a roadmap and a finished run",
+      "argv": [],
+      "env": {},
+      "state_before": {
+        ".local/state/oso-code/{repo}.state": "roadmap=auth-hardening\nauto=done\nauto_change=token-rotation\nsession=other-session\n"
+      },
+      "cwd": "workspace",
+      "stdin": "{\"session_id\":\"test-session\",\"cwd\":\"{cwd}\"}",
+      "expect": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    },
+    {
+      "name": "stale gate: SessionStart says nothing about a roadmap in flight in another repository",
+      "argv": [],
+      "env": {},
+      "state_before": {
+        ".local/state/oso-code/other-roadmap.state": "mode=plan\nsession=other-session\nroadmap=auth-hardening\n"
+      },
+      "cwd": "workspace",
+      "stdin": "{\"session_id\":\"test-session\",\"cwd\":\"{cwd}\"}",
+      "expect": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    },
+    {
+      "name": "stale gate: SessionStart says nothing about a roadmap this session is running itself",
+      "argv": [],
+      "env": {},
+      "state_before": {
+        ".local/state/oso-code/{repo}.state": "mode=plan\nsession=test-session\nroadmap=auth-hardening\n"
+      },
+      "cwd": "workspace",
+      "stdin": "{\"session_id\":\"test-session\",\"cwd\":\"{cwd}\"}",
+      "expect": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    },
+    {
+      "name": "stale gate: SessionStart says nothing when the only state is this session's",
+      "argv": [],
+      "env": {},
+      "state_before": {
+        ".local/state/oso-code/{repo}.state": "mode=plan\nsession=test-session\n"
+      },
+      "cwd": "workspace",
+      "stdin": "{\"session_id\":\"test-session\",\"cwd\":\"{cwd}\"}",
+      "expect": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    },
+    {
+      "name": "stale gate: SessionStart says nothing where there is no state dir",
+      "argv": [],
+      "env": {},
+      "state_before": {},
+      "cwd": "workspace",
+      "stdin": "{\"session_id\":\"test-session\",\"cwd\":\"{cwd}\"}",
+      "expect": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    },
+    {
+      "name": "stale gate: the disarmed roadmap=none sentinel puts the signal back on the plan route it had before",
+      "argv": [],
+      "env": {},
+      "state_before": {
+        ".local/state/oso-code/{repo}.state": "mode=plan\nsession=other-session\nroadmap=none\n"
+      },
+      "cwd": "workspace",
+      "stdin": "{\"session_id\":\"test-session\",\"cwd\":\"{cwd}\"}",
+      "expect": {
+        "exit": 0,
+        "stdout": {
+          "contains": [
+            "/oso-code:plan {change}"
+          ]
+        }
+      }
+    }
+  ]
+}

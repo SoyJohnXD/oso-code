@@ -1,0 +1,275 @@
+{
+  "gate": "edits",
+  "cases": [
+    {
+      "name": "slice gate: a call naming no session is untouched however armed the repository is",
+      "argv": [],
+      "env": {},
+      "state_before": {
+        ".local/state/oso-code/{repo}.state": "mode=plan\nactive_slice=none\nverify_green=false\nsession=test-session\n"
+      },
+      "cwd": "workspace",
+      "stdin": "{\"cwd\":\"{cwd}\",\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Edit\",\"tool_input\":{\"file_path\":\"/tmp/x.ts\",\"old_string\":\"a\",\"new_string\":\"b\"}}",
+      "expect": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": "",
+        "events_appended": [
+          {
+            "event": "payload-unparseable",
+            "session": ""
+          }
+        ]
+      }
+    },
+    {
+      "name": "slice gate: a denied edit writes the target path into the event record",
+      "argv": [],
+      "env": {},
+      "state_before": {
+        ".local/state/oso-code/{repo}.state": "mode=plan\nsession=test-session\n"
+      },
+      "cwd": "workspace",
+      "stdin": "{\"session_id\":\"test-session\",\"transcript_path\":\"{home}/.claude/projects/oso-code/test-session.jsonl\",\"cwd\":\"{cwd}\",\"permission_mode\":\"default\",\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Edit\",\"tool_input\":{\"file_path\":\"/tmp/x.ts\",\"old_string\":\"const slice = 1;\",\"new_string\":\"const slice = 2;\",\"replace_all\":false}}",
+      "expect": {
+        "exit": 0,
+        "stdout": {
+          "contains": [
+            "\"permissionDecision\":\"deny\""
+          ]
+        },
+        "stderr": "",
+        "events_appended": [
+          {
+            "event": "edit-denied",
+            "command": "/tmp/x.ts",
+            "session": "test-session",
+            "gate": "block-edits-without-slice.sh",
+            "hook_event": "PreToolUse"
+          }
+        ]
+      }
+    },
+    {
+      "name": "slice gate: a session that does not own the armed plan edits untouched",
+      "argv": [],
+      "env": {},
+      "state_before": {
+        ".local/state/oso-code/{repo}.state": "mode=plan\nactive_slice=none\nverify_green=false\nsession=owner-session\n"
+      },
+      "cwd": "workspace",
+      "stdin": "{\"session_id\":\"test-session\",\"transcript_path\":\"{home}/.claude/projects/oso-code/test-session.jsonl\",\"cwd\":\"{cwd}\",\"permission_mode\":\"default\",\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Edit\",\"tool_input\":{\"file_path\":\"/tmp/x.ts\",\"old_string\":\"const slice = 1;\",\"new_string\":\"const slice = 2;\",\"replace_all\":false}}",
+      "expect": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": "",
+        "events_appended": []
+      }
+    },
+    {
+      "name": "slice gate: an armed slice number opens the gate",
+      "argv": [],
+      "env": {},
+      "state_before": {
+        ".local/state/oso-code/{repo}.state": "mode=plan\nactive_slice=3\nverify_green=false\nsession=test-session\n"
+      },
+      "cwd": "workspace",
+      "stdin": "{\"session_id\":\"test-session\",\"transcript_path\":\"{home}/.claude/projects/oso-code/test-session.jsonl\",\"cwd\":\"{cwd}\",\"permission_mode\":\"default\",\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Edit\",\"tool_input\":{\"file_path\":\"/tmp/x.ts\",\"old_string\":\"const slice = 1;\",\"new_string\":\"const slice = 2;\",\"replace_all\":false}}",
+      "expect": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    },
+    {
+      "name": "slice gate: an unreadable state path is denied",
+      "argv": [],
+      "env": {},
+      "state_before": {
+        ".local/state/oso-code/{repo}.state": {
+          "kind": "directory"
+        }
+      },
+      "cwd": "workspace",
+      "stdin": "{\"session_id\":\"test-session\",\"transcript_path\":\"{home}/.claude/projects/oso-code/test-session.jsonl\",\"cwd\":\"{cwd}\",\"permission_mode\":\"default\",\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Edit\",\"tool_input\":{\"file_path\":\"/tmp/x.ts\",\"old_string\":\"const slice = 1;\",\"new_string\":\"const slice = 2;\",\"replace_all\":false}}",
+      "expect": {
+        "exit": 0,
+        "stdout": {
+          "contains": [
+            "\"permissionDecision\":\"deny\""
+          ]
+        },
+        "stderr": ""
+      }
+    },
+    {
+      "name": "slice gate: debug-mode edit is unrestricted",
+      "argv": [],
+      "env": {},
+      "state_before": {
+        ".local/state/oso-code/{repo}.state": "mode=debug\nverify_green=false\nsession=test-session\n"
+      },
+      "cwd": "workspace",
+      "stdin": "{\"session_id\":\"test-session\",\"transcript_path\":\"{home}/.claude/projects/oso-code/test-session.jsonl\",\"cwd\":\"{cwd}\",\"permission_mode\":\"default\",\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Edit\",\"tool_input\":{\"file_path\":\"/tmp/x.ts\",\"old_string\":\"const slice = 1;\",\"new_string\":\"const slice = 2;\",\"replace_all\":false}}",
+      "expect": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    },
+    {
+      "name": "slice gate: edit with no state file",
+      "argv": [],
+      "env": {},
+      "state_before": {},
+      "cwd": "workspace",
+      "stdin": "{\"session_id\":\"test-session\",\"transcript_path\":\"{home}/.claude/projects/oso-code/test-session.jsonl\",\"cwd\":\"{cwd}\",\"permission_mode\":\"default\",\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Edit\",\"tool_input\":{\"file_path\":\"/tmp/x.ts\",\"old_string\":\"const slice = 1;\",\"new_string\":\"const slice = 2;\",\"replace_all\":false}}",
+      "expect": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    },
+    {
+      "name": "slice gate: plan-mode edit with active slice",
+      "argv": [],
+      "env": {},
+      "state_before": {
+        ".local/state/oso-code/{repo}.state": "mode=plan\nactive_slice=2\nverify_green=false\nsession=test-session\n"
+      },
+      "cwd": "workspace",
+      "stdin": "{\"session_id\":\"test-session\",\"transcript_path\":\"{home}/.claude/projects/oso-code/test-session.jsonl\",\"cwd\":\"{cwd}\",\"permission_mode\":\"default\",\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Edit\",\"tool_input\":{\"file_path\":\"/tmp/x.ts\",\"old_string\":\"const slice = 1;\",\"new_string\":\"const slice = 2;\",\"replace_all\":false}}",
+      "expect": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    },
+    {
+      "name": "slice gate: plan-mode edit without active slice",
+      "argv": [],
+      "env": {},
+      "state_before": {
+        ".local/state/oso-code/{repo}.state": "mode=plan\nverify_green=false\nsession=test-session\n"
+      },
+      "cwd": "workspace",
+      "stdin": "{\"session_id\":\"test-session\",\"transcript_path\":\"{home}/.claude/projects/oso-code/test-session.jsonl\",\"cwd\":\"{cwd}\",\"permission_mode\":\"default\",\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Edit\",\"tool_input\":{\"file_path\":\"/tmp/x.ts\",\"old_string\":\"const slice = 1;\",\"new_string\":\"const slice = 2;\",\"replace_all\":false}}",
+      "expect": {
+        "exit": 0,
+        "stdout": {
+          "contains": [
+            "\"permissionDecision\":\"deny\""
+          ]
+        },
+        "stderr": ""
+      }
+    },
+    {
+      "name": "slice gate: quick-mode edit is unrestricted",
+      "argv": [],
+      "env": {},
+      "state_before": {
+        ".local/state/oso-code/{repo}.state": "mode=quick\nverify_green=false\nsession=test-session\n"
+      },
+      "cwd": "workspace",
+      "stdin": "{\"session_id\":\"test-session\",\"transcript_path\":\"{home}/.claude/projects/oso-code/test-session.jsonl\",\"cwd\":\"{cwd}\",\"permission_mode\":\"default\",\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Edit\",\"tool_input\":{\"file_path\":\"/tmp/x.ts\",\"old_string\":\"const slice = 1;\",\"new_string\":\"const slice = 2;\",\"replace_all\":false}}",
+      "expect": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    },
+    {
+      "name": "slice gate: the closed-slice sentinel disarms the gate again",
+      "argv": [],
+      "env": {},
+      "state_before": {
+        ".local/state/oso-code/{repo}.state": "mode=plan\nactive_slice=none\nverify_green=true\nsession=test-session\n"
+      },
+      "cwd": "workspace",
+      "stdin": "{\"session_id\":\"test-session\",\"transcript_path\":\"{home}/.claude/projects/oso-code/test-session.jsonl\",\"cwd\":\"{cwd}\",\"permission_mode\":\"default\",\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Edit\",\"tool_input\":{\"file_path\":\"/tmp/x.ts\",\"old_string\":\"const slice = 1;\",\"new_string\":\"const slice = 2;\",\"replace_all\":false}}",
+      "expect": {
+        "exit": 0,
+        "stdout": {
+          "contains": [
+            "\"permissionDecision\":\"deny\""
+          ]
+        },
+        "stderr": ""
+      }
+    },
+    {
+      "name": "slice gate: the deny names the exact oso-state call that arms a slice",
+      "argv": [],
+      "env": {},
+      "state_before": {
+        ".local/state/oso-code/{repo}.state": "mode=plan\nactive_slice=none\nverify_green=false\nsession=test-session\n"
+      },
+      "cwd": "workspace",
+      "stdin": "{\"session_id\":\"test-session\",\"transcript_path\":\"{home}/.claude/projects/oso-code/test-session.jsonl\",\"cwd\":\"{cwd}\",\"permission_mode\":\"default\",\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Edit\",\"tool_input\":{\"file_path\":\"/tmp/x.ts\",\"old_string\":\"const slice = 1;\",\"new_string\":\"const slice = 2;\",\"replace_all\":false}}",
+      "expect": {
+        "exit": 0,
+        "stdout": {
+          "contains": [
+            "\"permissionDecision\":\"deny\"",
+            "oso-state --session test-session set active_slice="
+          ]
+        },
+        "stderr": ""
+      }
+    },
+    {
+      "name": "slice gate: the edit gate denies a marked call while no slice is active",
+      "argv": [],
+      "env": {},
+      "state_before": {
+        ".local/state/oso-code/{repo}.state": "mode=plan\nactive_slice=none\nverify_green=false\nsession=test-session\n"
+      },
+      "cwd": "workspace",
+      "stdin": "{\"session_id\":\"test-session\",\"transcript_path\":\"{home}/.claude/projects/oso-code/test-session.jsonl\",\"cwd\":\"{cwd}\",\"permission_mode\":\"default\",\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Edit\",\"tool_input\":{\"file_path\":\"/tmp/x.ts\",\"old_string\":\"const slice = 1;\",\"new_string\":\"const slice = 2;\",\"replace_all\":false}}",
+      "expect": {
+        "exit": 0,
+        "stdout": {
+          "contains": [
+            "\"permissionDecision\":\"deny\""
+          ]
+        },
+        "stderr": ""
+      }
+    },
+    {
+      "name": "slice gate: the next slice re-arms the gate the sentinel closed",
+      "argv": [],
+      "env": {},
+      "state_before": {
+        ".local/state/oso-code/{repo}.state": "mode=plan\nactive_slice=4\nverify_green=false\nsession=test-session\n"
+      },
+      "cwd": "workspace",
+      "stdin": "{\"session_id\":\"test-session\",\"transcript_path\":\"{home}/.claude/projects/oso-code/test-session.jsonl\",\"cwd\":\"{cwd}\",\"permission_mode\":\"default\",\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Edit\",\"tool_input\":{\"file_path\":\"/tmp/x.ts\",\"old_string\":\"const slice = 1;\",\"new_string\":\"const slice = 2;\",\"replace_all\":false}}",
+      "expect": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    },
+    {
+      "name": "slice gate: the session the state names as its owner is still denied an edit while no slice is active",
+      "argv": [],
+      "env": {},
+      "state_before": {
+        ".local/state/oso-code/{repo}.state": "mode=plan\nactive_slice=none\nverify_green=false\nroadmap=harness-friction\nsession=test-session\n"
+      },
+      "cwd": "workspace",
+      "stdin": "{\"session_id\":\"test-session\",\"transcript_path\":\"{home}/.claude/projects/oso-code/test-session.jsonl\",\"cwd\":\"{cwd}\",\"permission_mode\":\"default\",\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Edit\",\"tool_input\":{\"file_path\":\"/tmp/x.ts\",\"old_string\":\"const slice = 1;\",\"new_string\":\"const slice = 2;\",\"replace_all\":false}}",
+      "expect": {
+        "exit": 0,
+        "stdout": {
+          "contains": [
+            "\"permissionDecision\":\"deny\""
+          ]
+        },
+        "stderr": ""
+      }
+    }
+  ]
+}

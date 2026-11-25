@@ -1,0 +1,413 @@
+{
+  "gate": "unknown",
+  "cases": [
+    {
+      "name": "unknown-tool gate: a foreign-owned plan awaiting its slice leaves an unlisted tool alone, as the edits gate does",
+      "argv": [
+        "--allow",
+        "Bash|apply_patch|send_input|resume_agent|close_agent|collaborationspawn_agent|collaborationsend_message|collaborationfollowup_task|collaborationwait_agent|collaborationinterrupt_agent|collaborationlist_agents"
+      ],
+      "env": {},
+      "state_before": {
+        ".local/state/oso-code/{repo}.state": "mode=plan\nactive_slice=none\nverify_green=false\nplan_approval=pending\nplan_approval_session=pending-owner-session\nsession=pending-owner-session\n"
+      },
+      "cwd": "workspace",
+      "stdin": "{\"session_id\":\"pending-foreign-session\",\"cwd\":\"{cwd}\",\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"FutureWriter\",\"tool_input\":{}}",
+      "expect": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    },
+    {
+      "name": "unknown-tool gate: a pending belonging to another session does not deny this session's Bash",
+      "argv": [
+        "--allow",
+        "Bash|apply_patch|send_input|resume_agent|close_agent|collaborationspawn_agent|collaborationsend_message|collaborationfollowup_task|collaborationwait_agent|collaborationinterrupt_agent|collaborationlist_agents"
+      ],
+      "env": {},
+      "state_before": {
+        ".local/state/oso-code/{repo}.state": "mode=plan\nactive_slice=none\nverify_green=false\nplan_approval=pending\nplan_approval_session=pending-owner-session\nsession=pending-owner-session\n"
+      },
+      "cwd": "workspace",
+      "stdin": "{\"session_id\":\"pending-foreign-session\",\"cwd\":\"{cwd}\",\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"tool_input\":{}}",
+      "expect": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    },
+    {
+      "name": "unknown-tool gate: a plan awaiting its slice lets a tool the harness knows through",
+      "argv": [
+        "--allow",
+        "bash|read|grep|engram_mem_search|edit|write|apply_patch"
+      ],
+      "env": {
+        "OSO_HOST": "opencode"
+      },
+      "state_before": {
+        ".local/state/oso-code/{repo}.state": "mode=plan\nactive_slice=none\nverify_green=false\nsession=test-session\n"
+      },
+      "cwd": "workspace",
+      "stdin": "{\"session_id\":\"test-session\",\"cwd\":\"{cwd}\",\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"engram_mem_search\",\"tool_input\":{}}",
+      "expect": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    },
+    {
+      "name": "unknown-tool gate: a plan awaiting its slice refuses an unknown tool and names the call that arms the slice",
+      "argv": [
+        "--allow",
+        "bash|read|grep|engram_mem_search|edit|write|apply_patch"
+      ],
+      "env": {
+        "OSO_HOST": "opencode"
+      },
+      "state_before": {
+        ".local/state/oso-code/{repo}.state": "mode=plan\nactive_slice=none\nverify_green=false\nsession=test-session\n"
+      },
+      "cwd": "workspace",
+      "stdin": "{\"session_id\":\"test-session\",\"cwd\":\"{cwd}\",\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"somemcp_do_thing\",\"tool_input\":{}}",
+      "expect": {
+        "exit": 0,
+        "stdout": {
+          "contains": [
+            "\"permissionDecision\":\"deny\"",
+            "oso-state --session test-session set active_slice="
+          ]
+        },
+        "stderr": ""
+      }
+    },
+    {
+      "name": "unknown-tool gate: a release-shaped tool is denied while a state file exists, whatever the mode",
+      "argv": [
+        "--allow",
+        "bash|read|grep|engram_mem_search|edit|write|apply_patch"
+      ],
+      "env": {
+        "OSO_HOST": "opencode"
+      },
+      "state_before": {
+        ".local/state/oso-code/{repo}.state": "mode=debug\nsession=test-session\n"
+      },
+      "cwd": "workspace",
+      "stdin": "{\"session_id\":\"test-session\",\"cwd\":\"{cwd}\",\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"gh_release_create\",\"tool_input\":{}}",
+      "expect": {
+        "exit": 0,
+        "stdout": {
+          "contains": [
+            "\"permissionDecision\":\"deny\"",
+            "deploy, publish or release"
+          ]
+        },
+        "stderr": "",
+        "events_appended": [
+          {
+            "event": "release-tool-denied",
+            "command": "gh_release_create",
+            "session": "test-session",
+            "gate": "block-unknown-tool.sh",
+            "hook_event": "PreToolUse"
+          }
+        ]
+      }
+    },
+    {
+      "name": "unknown-tool gate: a write into the installed harness tree is denied",
+      "argv": [
+        "--allow",
+        "bash|read|grep|engram_mem_search|edit|write|apply_patch"
+      ],
+      "env": {
+        "OSO_HOST": "opencode",
+        "XDG_CONFIG_HOME": "{home}/.config"
+      },
+      "state_before": {
+        ".local/state/oso-code/{repo}.state": "mode=plan\nactive_slice=1\nverify_green=false\nsession=test-session\n"
+      },
+      "cwd": "workspace",
+      "stdin": "{\"session_id\":\"test-session\",\"cwd\":\"{cwd}\",\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"write\",\"tool_input\":{\"file_path\":\"{home}/.config/opencode/skill/x.md\"}}",
+      "expect": {
+        "exit": 0,
+        "stdout": {
+          "contains": [
+            "\"permissionDecision\":\"deny\"",
+            "installed oso-code harness tree"
+          ]
+        },
+        "stderr": ""
+      }
+    },
+    {
+      "name": "unknown-tool gate: an apply_patch whose body names only repository files passes",
+      "argv": [
+        "--allow",
+        "bash|read|grep|engram_mem_search|edit|write|patch"
+      ],
+      "env": {
+        "OSO_HOST": "opencode",
+        "XDG_CONFIG_HOME": "{home}/.config"
+      },
+      "state_before": {
+        ".local/state/oso-code/{repo}.state": "mode=quick\nsession=test-session\n"
+      },
+      "cwd": "workspace",
+      "stdin": "{\"session_id\":\"test-session\",\"cwd\":\"{cwd}\",\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"patch\",\"tool_input\":{\"patchText\":\"*** Begin Patch\\n*** Update File: src/a.ts\\n*** Move to: src/b.ts\\n@@\\n-a\\n+b\\n*** End Patch\"}}",
+      "expect": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    },
+    {
+      "name": "unknown-tool gate: an apply_patch whose body names a file in the oso-code state directory is denied",
+      "argv": [
+        "--allow",
+        "bash|read|grep|engram_mem_search|edit|write|patch"
+      ],
+      "env": {
+        "OSO_HOST": "opencode",
+        "XDG_CONFIG_HOME": "{home}/.config"
+      },
+      "state_before": {
+        ".local/state/oso-code/{repo}.state": "mode=quick\nsession=test-session\n"
+      },
+      "cwd": "workspace",
+      "stdin": "{\"session_id\":\"test-session\",\"cwd\":\"{cwd}\",\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"patch\",\"tool_input\":{\"patchText\":\"*** Begin Patch\\n*** Update File: src/a.ts\\n@@\\n-a\\n+b\\n*** Add File: {home}/.local/state/oso-code/x.state\\n+mode=done\\n*** End Patch\"}}",
+      "expect": {
+        "exit": 0,
+        "stdout": {
+          "contains": [
+            "\"permissionDecision\":\"deny\"",
+            "installed oso-code harness tree"
+          ]
+        },
+        "stderr": ""
+      }
+    },
+    {
+      "name": "unknown-tool gate: an unlisted tool passes in quick mode",
+      "argv": [
+        "--allow",
+        "bash|read|grep|engram_mem_search|edit|write|apply_patch"
+      ],
+      "env": {
+        "OSO_HOST": "opencode"
+      },
+      "state_before": {
+        ".local/state/oso-code/{repo}.state": "mode=quick\nsession=test-session\n"
+      },
+      "cwd": "workspace",
+      "stdin": "{\"session_id\":\"test-session\",\"cwd\":\"{cwd}\",\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"engram_mem_timeline\",\"tool_input\":{}}",
+      "expect": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    },
+    {
+      "name": "unknown-tool gate: an unlisted tool passes while a slice is active",
+      "argv": [
+        "--allow",
+        "bash|read|grep|engram_mem_search|edit|write|apply_patch"
+      ],
+      "env": {
+        "OSO_HOST": "opencode"
+      },
+      "state_before": {
+        ".local/state/oso-code/{repo}.state": "mode=plan\nactive_slice=1\nverify_green=false\nsession=test-session\n"
+      },
+      "cwd": "workspace",
+      "stdin": "{\"session_id\":\"test-session\",\"cwd\":\"{cwd}\",\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"somemcp_do_thing\",\"tool_input\":{}}",
+      "expect": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    },
+    {
+      "name": "unknown-tool gate: close_agent passes the armed runtime catch-all",
+      "argv": [
+        "--allow",
+        "Bash|apply_patch|send_input|resume_agent|close_agent|collaborationspawn_agent|collaborationsend_message|collaborationfollowup_task|collaborationwait_agent|collaborationinterrupt_agent|collaborationlist_agents"
+      ],
+      "env": {},
+      "state_before": {
+        ".local/state/oso-code/{repo}.state": "mode=plan\nactive_slice=1\nverify_green=false\nsession=test-session\n"
+      },
+      "cwd": "workspace",
+      "stdin": "{\"session_id\":\"test-session\",\"cwd\":\"{cwd}\",\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"close_agent\",\"tool_input\":{}}",
+      "expect": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    },
+    {
+      "name": "unknown-tool gate: collaborationfollowup_task passes the armed runtime catch-all",
+      "argv": [
+        "--allow",
+        "Bash|apply_patch|send_input|resume_agent|close_agent|collaborationspawn_agent|collaborationsend_message|collaborationfollowup_task|collaborationwait_agent|collaborationinterrupt_agent|collaborationlist_agents"
+      ],
+      "env": {},
+      "state_before": {
+        ".local/state/oso-code/{repo}.state": "mode=plan\nactive_slice=1\nverify_green=false\nsession=test-session\n"
+      },
+      "cwd": "workspace",
+      "stdin": "{\"session_id\":\"test-session\",\"cwd\":\"{cwd}\",\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"collaborationfollowup_task\",\"tool_input\":{}}",
+      "expect": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    },
+    {
+      "name": "unknown-tool gate: collaborationinterrupt_agent passes the armed runtime catch-all",
+      "argv": [
+        "--allow",
+        "Bash|apply_patch|send_input|resume_agent|close_agent|collaborationspawn_agent|collaborationsend_message|collaborationfollowup_task|collaborationwait_agent|collaborationinterrupt_agent|collaborationlist_agents"
+      ],
+      "env": {},
+      "state_before": {
+        ".local/state/oso-code/{repo}.state": "mode=plan\nactive_slice=1\nverify_green=false\nsession=test-session\n"
+      },
+      "cwd": "workspace",
+      "stdin": "{\"session_id\":\"test-session\",\"cwd\":\"{cwd}\",\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"collaborationinterrupt_agent\",\"tool_input\":{}}",
+      "expect": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    },
+    {
+      "name": "unknown-tool gate: collaborationlist_agents passes the armed runtime catch-all",
+      "argv": [
+        "--allow",
+        "Bash|apply_patch|send_input|resume_agent|close_agent|collaborationspawn_agent|collaborationsend_message|collaborationfollowup_task|collaborationwait_agent|collaborationinterrupt_agent|collaborationlist_agents"
+      ],
+      "env": {},
+      "state_before": {
+        ".local/state/oso-code/{repo}.state": "mode=plan\nactive_slice=1\nverify_green=false\nsession=test-session\n"
+      },
+      "cwd": "workspace",
+      "stdin": "{\"session_id\":\"test-session\",\"cwd\":\"{cwd}\",\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"collaborationlist_agents\",\"tool_input\":{}}",
+      "expect": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    },
+    {
+      "name": "unknown-tool gate: collaborationsend_message passes the armed runtime catch-all",
+      "argv": [
+        "--allow",
+        "Bash|apply_patch|send_input|resume_agent|close_agent|collaborationspawn_agent|collaborationsend_message|collaborationfollowup_task|collaborationwait_agent|collaborationinterrupt_agent|collaborationlist_agents"
+      ],
+      "env": {},
+      "state_before": {
+        ".local/state/oso-code/{repo}.state": "mode=plan\nactive_slice=1\nverify_green=false\nsession=test-session\n"
+      },
+      "cwd": "workspace",
+      "stdin": "{\"session_id\":\"test-session\",\"cwd\":\"{cwd}\",\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"collaborationsend_message\",\"tool_input\":{}}",
+      "expect": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    },
+    {
+      "name": "unknown-tool gate: collaborationspawn_agent passes the armed runtime catch-all",
+      "argv": [
+        "--allow",
+        "Bash|apply_patch|send_input|resume_agent|close_agent|collaborationspawn_agent|collaborationsend_message|collaborationfollowup_task|collaborationwait_agent|collaborationinterrupt_agent|collaborationlist_agents"
+      ],
+      "env": {},
+      "state_before": {
+        ".local/state/oso-code/{repo}.state": "mode=plan\nactive_slice=1\nverify_green=false\nsession=test-session\n"
+      },
+      "cwd": "workspace",
+      "stdin": "{\"session_id\":\"test-session\",\"cwd\":\"{cwd}\",\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"collaborationspawn_agent\",\"tool_input\":{}}",
+      "expect": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    },
+    {
+      "name": "unknown-tool gate: collaborationwait_agent passes the armed runtime catch-all",
+      "argv": [
+        "--allow",
+        "Bash|apply_patch|send_input|resume_agent|close_agent|collaborationspawn_agent|collaborationsend_message|collaborationfollowup_task|collaborationwait_agent|collaborationinterrupt_agent|collaborationlist_agents"
+      ],
+      "env": {},
+      "state_before": {
+        ".local/state/oso-code/{repo}.state": "mode=plan\nactive_slice=1\nverify_green=false\nsession=test-session\n"
+      },
+      "cwd": "workspace",
+      "stdin": "{\"session_id\":\"test-session\",\"cwd\":\"{cwd}\",\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"collaborationwait_agent\",\"tool_input\":{}}",
+      "expect": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    },
+    {
+      "name": "unknown-tool gate: resume_agent passes the armed runtime catch-all",
+      "argv": [
+        "--allow",
+        "Bash|apply_patch|send_input|resume_agent|close_agent|collaborationspawn_agent|collaborationsend_message|collaborationfollowup_task|collaborationwait_agent|collaborationinterrupt_agent|collaborationlist_agents"
+      ],
+      "env": {},
+      "state_before": {
+        ".local/state/oso-code/{repo}.state": "mode=plan\nactive_slice=1\nverify_green=false\nsession=test-session\n"
+      },
+      "cwd": "workspace",
+      "stdin": "{\"session_id\":\"test-session\",\"cwd\":\"{cwd}\",\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"resume_agent\",\"tool_input\":{}}",
+      "expect": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    },
+    {
+      "name": "unknown-tool gate: send_input passes the armed runtime catch-all",
+      "argv": [
+        "--allow",
+        "Bash|apply_patch|send_input|resume_agent|close_agent|collaborationspawn_agent|collaborationsend_message|collaborationfollowup_task|collaborationwait_agent|collaborationinterrupt_agent|collaborationlist_agents"
+      ],
+      "env": {},
+      "state_before": {
+        ".local/state/oso-code/{repo}.state": "mode=plan\nactive_slice=1\nverify_green=false\nsession=test-session\n"
+      },
+      "cwd": "workspace",
+      "stdin": "{\"session_id\":\"test-session\",\"cwd\":\"{cwd}\",\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"send_input\",\"tool_input\":{}}",
+      "expect": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    },
+    {
+      "name": "unknown-tool gate: with no state file a release-shaped tool passes, since the gate arms only while a state file exists",
+      "argv": [
+        "--allow",
+        "bash|read|grep|engram_mem_search|edit|write|apply_patch"
+      ],
+      "env": {
+        "OSO_HOST": "opencode"
+      },
+      "state_before": {},
+      "cwd": "workspace",
+      "stdin": "{\"session_id\":\"test-session\",\"cwd\":\"{cwd}\",\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"npm_publish\",\"tool_input\":{}}",
+      "expect": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    }
+  ]
+}
