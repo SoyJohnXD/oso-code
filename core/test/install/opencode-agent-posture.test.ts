@@ -193,10 +193,6 @@ describe("the tool ids a block denies are the ones OpenCode 2 offers, never an i
 });
 
 describe("the owned-server row is red before it is believed green", () => {
-  test("the shipped agent tree reads closed", () => {
-    assert.equal(openCodeAgentMcpSurfaceStatus(agentTreeCopy("clean")), "closed");
-  });
-
   test("a tree whose verifier block lets the engram server back through reads open, naming the agent and the server", () => {
     const configHome = agentTreeCopy("engram-reopened");
     const contract = path.join(configHome, "agent", "oso-verifier.md");

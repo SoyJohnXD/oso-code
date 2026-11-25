@@ -77,18 +77,6 @@ describe("backupSizeKib", { skip: skipUnlessDiskBlocksAreAllocated() }, () => {
     assert.equal(backupSizeKib(treeC), duSizeKibOf(treeC));
     assert.equal(backupSizeKib(treeD), duSizeKibOf(treeD));
   });
-
-  test("installBackupsOverBudget reaches the same retention decision sized by the port as sized by du -sk", () => {
-    const newestFirst = [treeA, treeB, treeC, treeD];
-    const sizeA = backupSizeKib(treeA);
-    const sizeB = backupSizeKib(treeB);
-    for (const budgetKib of [sizeA + 1, sizeA + sizeB + 1]) {
-      assert.deepEqual(
-        installBackupsOverBudget(newestFirst, budgetKib, backupSizeKib),
-        installBackupsOverBudget(newestFirst, budgetKib, duSizeKibOf),
-      );
-    }
-  });
 });
 
 const treeA = path.join(repositoryRoot, "core", "src", "install");

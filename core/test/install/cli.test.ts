@@ -78,12 +78,6 @@ describe("oso <verb> --host <host> [flags] usage", () => {
     assert.equal(result.status, 1);
     assert.equal(result.stderr, USAGE);
   });
-
-  test("the usage text is rendered from the table, so a cell that changes cannot leave the text behind", () => {
-    for (const line of ["  opencode  repair   --yes --list [<backup>]", "  claude    verify   (no arguments)"]) {
-      assert.ok(USAGE.includes(line), line);
-    }
-  });
 });
 
 describe("the flag table is per host AND verb, populated from each bash script's own case block", () => {

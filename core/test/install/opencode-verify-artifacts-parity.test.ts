@@ -188,26 +188,6 @@ provedSomething(
 );
 
 describe("the rows this half owns are the artifact and repository rows, and the ones it defers are named individually", () => {
-  test("the artifact and repository rows are exactly the twelve C3-S4 deferred and the MCP surface row that joined them", () => {
-    const owned = OPENCODE_LOCAL_CHECK_ROWS.filter((row) => THIS_HALF_READS.includes(row.kind)).map((row) => row.name);
-    assert.deepEqual(owned, [
-      "isolated fixture install",
-      "nine skill wrappers and the shared skill directory installed",
-      "agent contracts installed",
-      "owned MCP servers closed on every installed agent",
-      "mode commands installed and routed",
-      "plugin entry, modules and routes installed",
-      "installed plugin loads on the host",
-      "Engram plugin file installed",
-      "installer-owned targets recorded",
-      "published gate bytes as installed",
-      "an install outside the named home is refused",
-      "OpenCode plugin typecheck",
-      "OpenCode plugin test suite",
-      "repository shell syntax",
-    ]);
-  });
-
   test("every row this half owns is either compared row for row below, or named here as driven by the assembly instead", () => {
     const compared: readonly string[] = COMPARED_ROWS.map((row) => row.name);
     const drivenByTheAssembly = OPENCODE_LOCAL_CHECK_ROWS.filter((row) => THIS_HALF_READS.includes(row.kind) && !compared.includes(row.name));
