@@ -43,7 +43,7 @@ jobs:
           bash -n tools/*.sh
           bash -n plugin/git-hooks/pre-commit
           bash -n tests/fixtures/*.sh
-      - name: OpenCode unit suite (ubuntu only — Windows bring-up is C3's, tracked in docs/rewrite/ts-core-roadmap.md)
+      - name: OpenCode unit suite (ubuntu only — the Windows run is the nightly's report-only step)
         if: runner.os == 'Linux'
         shell: bash
         run: |

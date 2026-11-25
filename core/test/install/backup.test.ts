@@ -81,7 +81,7 @@ describe("backupSizeKib", { skip: skipUnlessDiskBlocksAreAllocated() }, () => {
 
 const treeA = path.join(repositoryRoot, "core", "src", "install");
 const treeB = path.join(repositoryRoot, "core", "test", "install");
-const treeC = path.join(repositoryRoot, "docs", "rewrite");
+const treeC = path.join(repositoryRoot, "plugin", "skills");
 const treeD = path.join(repositoryRoot, "bootstrap");
 
 function duSizeKibOf(directory: string): number {
