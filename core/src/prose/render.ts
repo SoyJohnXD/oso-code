@@ -1,15 +1,15 @@
 import { EDIT_RULES_THE_HOST_RESOLVES_BY_LAST_MATCH, mcpServerWildcard, OWNED_MCP_NAMES } from "../install/opencode-config.ts";
+import type { HostName } from "../routes/routes.ts";
 import {
   OPENCODE_PERMISSION_ORDER,
   type AgentRole,
-  type HostName,
   type OpenCodeAgentSpec,
   type SkillHost,
   type SkillStub,
 } from "./routes.ts";
 
 export { agentHosts, AGENT_ROLES, SHARED_REFERENCE_HOSTS, SKILL_STUBS } from "./routes.ts";
-export type { AgentRole, HostName, SkillHost, SkillStub } from "./routes.ts";
+export type { AgentRole, SkillHost, SkillStub } from "./routes.ts";
 
 export function agentSharedBodyPath(role: AgentRole): string {
   return `core/src/prose/agents/${role.id}/body.md`;
@@ -70,7 +70,7 @@ export function renderSkill(stub: SkillStub, _host: SkillHost, body: string, flo
   return `${frontMatterBlock(lines)}\n\n${body}\n\n${flowBody(flow)}`;
 }
 
-export function flowBody(flowSkillFile: string): string {
+function flowBody(flowSkillFile: string): string {
   const lines = flowSkillFile.split("\n");
   const closingDelimiter = lines.indexOf("---", 1);
   return lines

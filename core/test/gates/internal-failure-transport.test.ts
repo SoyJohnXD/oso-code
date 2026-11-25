@@ -42,19 +42,8 @@ function assertLoud(run: GateRun, causeKeyword: RegExp): void {
 }
 
 describe(
-  "core/src/gates/dispatch.ts: every lifecycle gate's internal failure is LOUD — SessionStart, SessionEnd and Stop alike " +
-    "(exit 1, cause on stderr, no stdout, no event) per DECISION 7 of the S2 fix round 3 ledger " +
-    "(docs/rewrite/ts-core-roadmap.md:121-135, G5's carve-out table amended to read INTERNAL FAILURE " +
-    "BEHAVIOUR). MEASURED directly against the real bash (env -u HOME plugin/hooks/<hook>.sh): every " +
-    "lifecycle hook that sources lib.sh dies at lib.sh:260 with 'HOME: unbound variable', a LOUD, exit-1, " +
-    "uniform failure for warn-stale-state.sh, the stale-version notice, reanchor-after-compact.sh and " +
-    "cleanup-state.sh alike — reanchor-after-compact.sh:43's own 2>/dev/null || exit 0 guard is measurably " +
-    "narrower: it protects ONLY state_file_for's own 'no sha256sum, no shasum' digest failure (reproduced " +
-    "below by stripping both tools from PATH while HOME stays valid), a bash-specific external-tool-absence " +
-    "condition core/src/state/store.ts's sha256Hex (node:crypto, always present) cannot reproduce — so " +
-    "stateFileFor()'s one throw source in this port, homeDirectory()'s HOME-unset, is not that guarded " +
-    "failure and is correctly loud for every one of the six lifecycle gates, never silently swallowed and " +
-    "never the four PreToolUse deniers' exit-2 fail-closed transport",
+  "every lifecycle gate's internal failure is loud: exit 1, the cause on stderr, no stdout and no event, " +
+    "while the four PreToolUse deniers keep their exit-2 fail-closed transport",
   () => {
     test(
       "stale: an internal failure unrelated to HOME (pluginRootAbove throwing inside staleStateContext, via " +
@@ -70,10 +59,7 @@ describe(
     );
 
     test(
-      "stale: HOME unset — reached through isDirectory(stateRootDirectory())'s own homeDirectory() throw, " +
-        "the port of plugin/hooks/warn-stale-state.sh:9's [ -d \"$OSO_STATE_DIR\" ] (which, like every check " +
-        "in a script that sources lib.sh, cannot even run once HOME is unset — measured: env -u HOME " +
-        "warn-stale-state.sh dies at lib.sh:260, exit 1, before line 9) — is loud",
+      "stale: HOME unset — reached through isDirectory(stateRootDirectory())'s own homeDirectory() throw — is loud",
       () => {
         const run = withStateSandbox("workspace", (sandbox) => {
           const stdin = sandbox.expandJson('{"session_id":"test-session","cwd":"{cwd}"}');
@@ -85,7 +71,7 @@ describe(
 
     test(
       "version: an internal failure (pluginRootAbove throwing inside pluginManifestFile, via the anchorless " +
-        "core copy) is loud, not the exit-0 silent this slice's round 2 shipped",
+        "core copy) is loud, never a silent exit 0",
       () => {
         const run = withStateSandbox("workspace", (sandbox) => {
           const stdin = sandbox.expandJson('{"session_id":"test-session","cwd":"{cwd}","source":"startup"}');
@@ -96,11 +82,8 @@ describe(
     );
 
     test(
-      "reanchor: HOME unset — reached through stateFileFor's own homeDirectory() throw, the SAME lib.sh:260 " +
-        "failure class every lifecycle hook shares (measured: env -u HOME reanchor-after-compact.sh dies at " +
-        "lib.sh:260, exit 1, 'HOME: unbound variable') — is loud, never the silent exit 0 round 2 shipped for " +
-        "every internal failure uniformly and never the narrower guard reanchor-after-compact.sh:43 reserves " +
-        "for state_file_for's OWN 'no sha256sum, no shasum' failure alone (measured separately, below)",
+      "reanchor: HOME unset, reached through stateFileFor's own homeDirectory() throw, is loud with the cause " +
+        "on stderr, never a silent exit 0",
       () => {
         const run = withStateSandbox("workspace", (sandbox) => {
           const stdin = sandbox.expandJson('{"session_id":"test-session","cwd":"{cwd}","source":"compact"}');
@@ -112,10 +95,7 @@ describe(
 
     test(
       "statebin: an internal failure (pluginRootAbove throwing, via the anchorless core copy) with " +
-        "CLAUDE_ENV_FILE set (so pluginRootDirectory() is reached) is loud, matching " +
-        "the retired state-bin hook's set -euo pipefail loud exit on an unwritable $CLAUDE_ENV_FILE (measured: " +
-        "CLAUDE_ENV_FILE pointed at a directory exits 1, 'Is a directory' on stderr), not the exit-0 silent " +
-        "this slice's round 2 shipped",
+        "CLAUDE_ENV_FILE set (so pluginRootDirectory() is reached) is loud, with the cause on stderr",
       () => {
         const run = withStateSandbox("workspace", (sandbox) => {
           const stdin = sandbox.expandJson('{"session_id":"test-session","cwd":"{cwd}"}');
@@ -130,9 +110,7 @@ describe(
 
     test(
       "teardown: HOME unset — reached through stateRootDirectory()'s own homeDirectory() throw while listing " +
-        ".state files, the port of plugin/hooks/cleanup-state.sh sourcing lib.sh (measured: env -u HOME " +
-        "cleanup-state.sh dies at lib.sh:260, exit 1) — is loud, not the exit-0 silent this slice's round 2 " +
-        "shipped",
+        ".state files — is loud, never an exit-0 silent teardown",
       () => {
         const run = withStateSandbox("workspace", (sandbox) => {
           const stdin = sandbox.expandJson('{"session_id":"test-session","cwd":"{cwd}"}');
@@ -144,8 +122,7 @@ describe(
 
     test(
       "autocontinue: HOME unset — reached through stateFileFor's own homeDirectory() throw while naming the " +
-        "run's state, the port of the retired bash autocontinue hook (which, like every check in a script that " +
-        "sources lib.sh, cannot even run once HOME is unset) — is loud",
+        "run's state — is loud",
       () => {
         const run = withStateSandbox("workspace", (sandbox) => {
           const stdin = sandbox.expandJson(
@@ -159,7 +136,7 @@ describe(
 
     test(
       "commit: the four PreToolUse deniers are untouched — runGate(['commit'], ...) with HOME unset still " +
-        "exits 2 with the cause on stderr (C2-D20's fail-closed transport, unchanged)",
+        "exits 2 with the cause on stderr, the fail-closed transport unchanged",
       () => {
         const run = withStateSandbox("workspace", (sandbox) => {
           const stdin = sandbox.expandJson(

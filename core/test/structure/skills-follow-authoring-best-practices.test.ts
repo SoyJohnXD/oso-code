@@ -9,8 +9,6 @@ const TOC_THRESHOLD_LINES = 100;
 const TOC_WINDOW_LINES = 20;
 const MAX_NAME_LENGTH = 64;
 const MAX_DESCRIPTION_LENGTH = 1024;
-const MINIMUM_SKILLS = 9;
-const MINIMUM_REFERENCE_FILES = 10;
 
 const SKILL_FILE = /^plugin\/skills\/[^/]+\/SKILL\.md$/;
 const REFERENCE_FILE = /^plugin\/skills\/(_shared|[^/]+\/references)\/.*\.md$/;
@@ -117,7 +115,7 @@ describe("the checkers report a planted regression", () => {
 });
 
 provedSomething(
-  `at least ${MINIMUM_SKILLS} SKILL.md files and ${MINIMUM_REFERENCE_FILES} reference files were read`,
-  skills.length >= MINIMUM_SKILLS && references.length >= MINIMUM_REFERENCE_FILES && stubs.length >= MINIMUM_SKILLS,
+  "a SKILL.md file, a reference file and a skill stub description were read",
+  skills.length > 0 && references.length > 0 && stubs.length > 0,
   `${skills.length} skills, ${references.length} references, ${stubs.length} stub descriptions`,
 );

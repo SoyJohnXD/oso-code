@@ -63,7 +63,7 @@ export const CONSTRUCTS_EXCLUDED_BY_CONSTRUCTION: readonly ShellConstruct[] = [
   { named: "bytes above U+007F, which bash writes raw under a locale this corpus does not fix", spelled: /[^\u0000-\u007f]/ },
 ];
 
-export const SHELL_WORDS_RUNNING_NO_COMMAND_OF_THEIR_OWN: ReadonlySet<string> = new Set([
+const SHELL_WORDS_RUNNING_NO_COMMAND_OF_THEIR_OWN: ReadonlySet<string> = new Set([
   "[[", "]]", ":", "[", "bg", "break", "caller", "cd", "compopt", "continue", "declare", "dirs",
   "disown", "echo", "enable", "exit", "export", "false", "fg", "getopts", "hash", "help", "jobs",
   "kill", "let", "local", "logout", "popd", "printf", "pushd", "pwd", "read", "readonly", "return",
@@ -71,7 +71,7 @@ export const SHELL_WORDS_RUNNING_NO_COMMAND_OF_THEIR_OWN: ReadonlySet<string> = 
   "unalias", "unset", "wait",
 ]);
 
-export const SHELL_WORDS_WHOSE_COMMAND_ONLY_AN_INTERACTIVE_SHELL_RUNS: ReadonlySet<string> = new Set([
+const SHELL_WORDS_WHOSE_COMMAND_ONLY_AN_INTERACTIVE_SHELL_RUNS: ReadonlySet<string> = new Set([
   "bind",
   "history",
 ]);

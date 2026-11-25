@@ -27,13 +27,13 @@ export function openCodeTrustTargetUnder(rootKind: TrustRootKind, root: string, 
 export function openCodeTrustReading(manifestFile: string, rootKind: TrustRootKind, root: string): OpenCodeTrustReading {
   return {
     filesRead: openCodeTrustRows(manifestFile).length,
-    divergences: trustDivergences(manifestFile, isClaudeOnlyShellGate, (published) => openCodeTrustTargetUnder(rootKind, root, published)),
+    divergences: trustDivergences(manifestFile, (published) => openCodeTrustTargetUnder(rootKind, root, published)),
   };
 }
 
 export function openCodeTrustRows(manifestFile: string): TrustRow[] {
   if (!isReadableRegularFile(manifestFile)) return [];
-  return parseTrustManifest(readFileSync(manifestFile, "utf8")).filter((row) => !isClaudeOnlyShellGate(row.file));
+  return parseTrustManifest(readFileSync(manifestFile, "utf8"));
 }
 
 export function publishedDistFileNames(manifestFile: string): string[] {
@@ -46,8 +46,4 @@ export function publishedDistFileNames(manifestFile: string): string[] {
 export function trustDivergenceLine(divergence: TrustDivergence): string {
   const state = divergence.state;
   return `${divergence.file} ${state.kind === "mismatch" ? state.actual : state.kind}`;
-}
-
-function isClaudeOnlyShellGate(published: string): boolean {
-  return published.startsWith("plugin/hooks/") && published.endsWith(".sh");
 }

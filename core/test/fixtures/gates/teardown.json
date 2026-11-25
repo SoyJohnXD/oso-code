@@ -1,0 +1,262 @@
+{
+  "gate": "teardown",
+  "cases": [
+    {
+      "name": "teardown gate: a disarmed roadmap key is left to the passes that already covered it",
+      "argv": [],
+      "env": {},
+      "state_before": {
+        ".local/state/oso-code/aa-roadmap-disarmed-decoy.state": "mode=plan\nsession=roadmap-finished\n",
+        ".local/state/oso-code/zz-roadmap-disarmed.state": "mode=plan\nsession=roadmap-finished\nroadmap=none\n"
+      },
+      "cwd": "workspace",
+      "stdin": "{\"session_id\":\"roadmap-finished\"}",
+      "expect": {
+        "exit": 0,
+        "state_after": {
+          ".local/state/oso-code/aa-roadmap-disarmed-decoy.state": null,
+          ".local/state/oso-code/zz-roadmap-disarmed.state": "mode=plan\nsession=roadmap-finished\nroadmap=none\n"
+        }
+      }
+    },
+    {
+      "name": "teardown gate: a state file naming no repo is still removed, and its worktree is left where it is",
+      "argv": [],
+      "env": {},
+      "state_before": {
+        ".local/state/oso-code/wt-no-repo.state": "mode=plan\nsession=wt-no-repo\n",
+        ".local/state/oso-code/worktrees/wt-no-repo/1": {
+          "kind": "directory"
+        }
+      },
+      "cwd": "workspace",
+      "stdin": "{\"session_id\":\"wt-no-repo\"}",
+      "expect": {
+        "exit": 0,
+        "state_after": {
+          ".local/state/oso-code/wt-no-repo.state": null,
+          ".local/state/oso-code/worktrees/wt-no-repo/1": "{present}"
+        }
+      }
+    },
+    {
+      "name": "teardown gate: a traversal session id cannot delete outside the state dir",
+      "argv": [],
+      "env": {},
+      "state_before": {
+        "canary": "canary\n"
+      },
+      "cwd": "workspace",
+      "stdin": "{\"session_id\":\"../../canary\"}",
+      "expect": {
+        "exit": 0,
+        "state_after": {
+          "canary": "canary\n"
+        }
+      }
+    },
+    {
+      "name": "teardown gate: an aged event log rotates to .1 and the next append starts a fresh one",
+      "argv": [],
+      "env": {},
+      "state_before": {
+        ".local/state/oso-code/events.jsonl": {
+          "kind": "file",
+          "content": "{\"event\":\"aged\"}\n",
+          "aged": true
+        }
+      },
+      "cwd": "workspace",
+      "stdin": "{\"session_id\":\"test-session\"}",
+      "expect": {
+        "exit": 0,
+        "state_after": {
+          ".local/state/oso-code/events.jsonl.1": {
+            "contains": [
+              "\"event\":\"aged\""
+            ]
+          },
+          ".local/state/oso-code/events.jsonl": null
+        }
+      }
+    },
+    {
+      "name": "teardown gate: an event log inside the retention window is left alone",
+      "argv": [],
+      "env": {},
+      "state_before": {
+        ".local/state/oso-code/events.jsonl": "{\"event\":\"current\"}\n"
+      },
+      "cwd": "workspace",
+      "stdin": "{\"session_id\":\"test-session\"}",
+      "expect": {
+        "exit": 0,
+        "state_after": {
+          ".local/state/oso-code/events.jsonl": {
+            "contains": [
+              "\"event\":\"current\""
+            ]
+          },
+          ".local/state/oso-code/events.jsonl.1": null
+        }
+      }
+    },
+    {
+      "name": "teardown gate: session end drops the state of a directory it is not standing in",
+      "argv": [],
+      "env": {},
+      "state_before": {
+        ".local/state/oso-code/{sha256:elsewhere-repo}.state": "mode=plan\nverify_green=true\nsession=sessionend-probe\n"
+      },
+      "cwd": "workspace",
+      "stdin": "{\"session_id\":\"sessionend-probe\"}",
+      "expect": {
+        "exit": 0,
+        "state_after": {
+          ".local/state/oso-code/{sha256:elsewhere-repo}.state": null
+        }
+      }
+    },
+    {
+      "name": "teardown gate: session end removes state and a leftover lock",
+      "argv": [],
+      "env": {},
+      "state_before": {
+        ".local/state/oso-code/{repo}.state": "mode=plan\nverify_green=true\nsession=test-session\n",
+        ".local/state/oso-code/{repo}.state.lock": {
+          "kind": "directory"
+        }
+      },
+      "cwd": "workspace",
+      "stdin": "{\"session_id\":\"test-session\"}",
+      "expect": {
+        "exit": 0,
+        "state_after": {
+          ".local/state/oso-code/{repo}.state": null,
+          ".local/state/oso-code/{repo}.state.lock": null
+        }
+      }
+    },
+    {
+      "name": "teardown gate: SessionEnd for the session whose plan_approval_session matches drops its own orphaned pending",
+      "argv": [],
+      "env": {
+        "OSO_AGENT": "1"
+      },
+      "state_before": {
+        ".local/state/oso-code/orphan-pending.state": "mode=plan\nplan_approval=pending\nsession=orphan-real-session\nplan_approval_session=orphan-real-session\n"
+      },
+      "cwd": "workspace",
+      "stdin": "{\"session_id\":\"orphan-real-session\"}",
+      "expect": {
+        "exit": 0,
+        "state_after": {
+          ".local/state/oso-code/orphan-pending.state": null
+        }
+      }
+    },
+    {
+      "name": "teardown gate: SessionEnd for an unrelated session leaves another session's pending alone",
+      "argv": [],
+      "env": {
+        "OSO_AGENT": "1"
+      },
+      "state_before": {
+        ".local/state/oso-code/orphan-pending.state": "mode=plan\nplan_approval=pending\nsession=orphan-real-session\nplan_approval_session=orphan-real-session\n"
+      },
+      "cwd": "workspace",
+      "stdin": "{\"session_id\":\"unrelated-session\"}",
+      "expect": {
+        "exit": 0,
+        "state_after": {
+          ".local/state/oso-code/orphan-pending.state": "mode=plan\nplan_approval=pending\nsession=orphan-real-session\nplan_approval_session=orphan-real-session\n"
+        }
+      }
+    },
+    {
+      "name": "teardown gate: SessionEnd leaves another session's roadmap in flight alone",
+      "argv": [],
+      "env": {},
+      "state_before": {
+        ".local/state/oso-code/roadmap-foreign.state": "mode=plan\nsession=someone-else\nroadmap=auth-hardening\n"
+      },
+      "cwd": "workspace",
+      "stdin": "{\"session_id\":\"roadmap-finished\"}",
+      "expect": {
+        "exit": 0,
+        "state_after": {
+          ".local/state/oso-code/roadmap-foreign.state": "mode=plan\nsession=someone-else\nroadmap=auth-hardening\n"
+        }
+      }
+    },
+    {
+      "name": "teardown gate: SessionEnd reaches the roadmap in flight the ownership sweep's first match left standing",
+      "argv": [],
+      "env": {},
+      "state_before": {
+        ".local/state/oso-code/aa-roadmap-decoy.state": "mode=plan\nsession=roadmap-owner\n",
+        ".local/state/oso-code/zz-roadmap-live.state": "mode=plan\nsession=roadmap-owner\nroadmap=auth-hardening\n"
+      },
+      "cwd": "workspace",
+      "stdin": "{\"session_id\":\"roadmap-owner\"}",
+      "expect": {
+        "exit": 0,
+        "state_after": {
+          ".local/state/oso-code/aa-roadmap-decoy.state": null,
+          ".local/state/oso-code/zz-roadmap-live.state": null
+        }
+      }
+    },
+    {
+      "name": "teardown gate: the abandoned-state sweep prunes what is old and unlocked, keeps what is recent or locked",
+      "argv": [],
+      "env": {},
+      "state_before": {
+        ".local/state/oso-code/{repo}.state": "mode=plan\nverify_green=true\nsession=test-session\n",
+        ".local/state/oso-code/abandoned-session.state": {
+          "kind": "file",
+          "content": "mode=plan\n",
+          "aged": true
+        },
+        ".local/state/oso-code/recent-session.state": "mode=plan\n",
+        ".local/state/oso-code/locked-session.state": {
+          "kind": "file",
+          "content": "mode=plan\n",
+          "aged": true
+        },
+        ".local/state/oso-code/locked-session.state.lock": {
+          "kind": "directory"
+        }
+      },
+      "cwd": "workspace",
+      "stdin": "{\"session_id\":\"test-session\"}",
+      "expect": {
+        "exit": 0,
+        "state_after": {
+          ".local/state/oso-code/abandoned-session.state": null,
+          ".local/state/oso-code/recent-session.state": "mode=plan\n",
+          ".local/state/oso-code/locked-session.state": "mode=plan\n",
+          ".local/state/oso-code/{repo}.state": null
+        }
+      }
+    },
+    {
+      "name": "teardown gate: the worktree of a session with no state file at all is left standing",
+      "argv": [],
+      "env": {},
+      "state_before": {
+        ".local/state/oso-code/worktrees/wt-unfound/1": {
+          "kind": "directory"
+        }
+      },
+      "cwd": "workspace",
+      "stdin": "{\"session_id\":\"wt-unfound\"}",
+      "expect": {
+        "exit": 0,
+        "state_after": {
+          ".local/state/oso-code/worktrees/wt-unfound/1": "{present}"
+        }
+      }
+    }
+  ]
+}

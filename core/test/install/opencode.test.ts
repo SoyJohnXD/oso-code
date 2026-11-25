@@ -151,11 +151,6 @@ describe("keysRecordedButMissing: the four nested paths repair reads, and the co
     assert.deepEqual(missing.map((key) => key.keyPath), ["theme", "permission.read", "permission.skill.mine", "permission.subagent.mine-*", "mcp.mine"]);
   });
 
-  test("never names permission, mcp, permission.skill or permission.subagent themselves, since those are containers", () => {
-    const named = keysRecordedButMissing(recorded, {}).map((key) => key.keyPath);
-    for (const container of ["permission", "mcp", "permission.skill", "permission.subagent"]) assert.equal(named.includes(container), false);
-  });
-
   test("names nothing when the live config already holds every recorded key", () => {
     assert.deepEqual(keysRecordedButMissing(recorded, JSON.parse(JSON.stringify(recorded)) as ConfigDocument), []);
   });

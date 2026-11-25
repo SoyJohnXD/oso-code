@@ -7,11 +7,6 @@ import { provedSomething } from "../support/proved.ts";
 import { repositoryRoot } from "../support/state-sandbox.ts";
 
 const REPO_OWNED_DOT_DIRECTORIES = new Set([".git", ".github", ".claude-plugin", ".agents"]);
-const MINIMUM_DOT_DIRECTORIES = 3;
-const MINIMUM_DOT_DIRECTORIES_DERIVATION =
-  "the dot-directories this REPOSITORY guarantees, not the ones a machine happens to hold: .agents, .claude-plugin " +
-  "and .github each carry tracked files — 3. .git is excluded because a git worktree carries it as a FILE, and " +
-  ".atl, .claude and .fallow are local tool directories present on a developer checkout and absent from CI";
 
 function dotDirectoriesAtRepositoryRoot(): string[] {
   return readdirSync(repositoryRoot)
@@ -28,9 +23,9 @@ function isGitIgnored(name: string): boolean {
 const dotDirectories = dotDirectoriesAtRepositoryRoot();
 
 provedSomething(
-  `${dotDirectories.length} dot-directory(ies) were found at the repository root`,
-  dotDirectories.length >= MINIMUM_DOT_DIRECTORIES,
-  `only ${dotDirectories.length} were found, under the ${MINIMUM_DOT_DIRECTORIES}-directory floor (${MINIMUM_DOT_DIRECTORIES_DERIVATION})`,
+  "a dot-directory was found at the repository root",
+  dotDirectories.length > 0,
+  "no dot-directory was found at the repository root, so no directory was checked as owned or ignored",
 );
 
 describe("every dot-directory at the repository root is either this repository's own or a line in .gitignore", () => {

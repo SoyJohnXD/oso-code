@@ -45,13 +45,13 @@ import { filesHoldTheSameBytes, isDirectory, isReadableRegularFile } from "../st
 
 export const OPENCODE_NOT_ON_PATH = "opencode-not-on-path";
 
-export const VERSION_ROW_SKIP = "OpenCode CLI version — opencode is not on PATH, so the installed pin could not be probed";
+const VERSION_ROW_SKIP = "OpenCode CLI version — opencode is not on PATH, so the installed pin could not be probed";
 
-export const LOCAL_CHECKS_SECTION = "local checks:";
+const LOCAL_CHECKS_SECTION = "local checks:";
 
 const PLUGIN_LOAD_ROW_SKIP = "OpenCode plugin loads on the host — opencode is not on PATH, so the installed plugin could not be loaded";
 
-export const FIXTURE_ROWS_SKIP = "the fixture-based artifact checks — the isolated install could not complete";
+const FIXTURE_ROWS_SKIP = "the fixture-based artifact checks — the isolated install could not complete";
 
 const REACHABLE_BEYOND_THE_TWINS_LIST = "reachable beyond the twin's list:";
 
@@ -67,10 +67,10 @@ export const OPERATOR_CONFIG_PROBE = {
   agentModel: "oso-verify/operator-pinned-model",
 } as const;
 
-export const OPERATOR_GLOBAL_PROSE = "oso-verify operator prose the installer must not touch";
+const OPERATOR_GLOBAL_PROSE = "oso-verify operator prose the installer must not touch";
 
-export const EXPECTED_MODE_COMMAND_COUNT = 4;
-export const MODE_COMMAND_AGENT_ROUTE = "build";
+const EXPECTED_MODE_COMMAND_COUNT = 4;
+const MODE_COMMAND_AGENT_ROUTE = "build";
 
 export type LocalCheckRowKind = "host" | "config" | "artifact" | "repository";
 
@@ -110,7 +110,6 @@ const SHELL_SYNTAX_SOURCES: readonly Readonly<{ directory: readonly string[]; su
   { directory: ["bootstrap"], suffix: ".sh" },
   { directory: ["bootstrap", "lib"], suffix: ".sh" },
   { directory: ["tools"], suffix: ".sh" },
-  { directory: ["plugin", "hooks"], suffix: ".sh" },
   { directory: ["tests"], suffix: ".sh" },
   { directory: ["tests", "fixtures"], suffix: ".sh" },
 ];

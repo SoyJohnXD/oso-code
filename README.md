@@ -23,10 +23,10 @@ Plan execution can be sequential in the main checkout or parallel by wave in iso
 | `opencode/` | OpenCode plugin, commands, agents and generated skill wrappers. |
 | `core/` | TypeScript source for gates, installers, state, scans, generated prose and tests. |
 | `bootstrap/` | Cross-platform installers plus the generated `oso` CLI and published artifact hashes. |
-| `docs/` | Architecture, decisions, parity records and operating guides. |
+| `docs/` | Blueprint, OpenCode parity record, and Windows and OpenCode purge guides. |
 | `tools/` | Repository checks and support scripts. |
 
-Generated runtime files are committed. Edit their source under `core/src/`, then run `npm run build`.
+Generated runtime files are committed. Edit their source under `core/src/`, then run `npm run build`. How changes are tested, how the repository grows and how it is managed: [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Install
 

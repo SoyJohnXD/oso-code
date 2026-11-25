@@ -1,6 +1,6 @@
 import type { OwnedMcpName } from "../install/opencode-config.ts";
+import type { HostName } from "../routes/routes.ts";
 
-export type HostName = "claude" | "opencode";
 export type SkillHost = Extract<HostName, "opencode">;
 
 export type OpenCodePermission =

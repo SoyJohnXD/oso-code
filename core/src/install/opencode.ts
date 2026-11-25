@@ -15,7 +15,7 @@ import { isReadableRegularFile, isRegularNonSymlinkFile, writeFileAtomically } f
 
 export const OPENCODE_INSTALL_BACKUP_FORMAT = "oso-code-opencode-install-v1";
 export const OPENCODE_INSTALL_BACKUP_LABEL = "commands";
-export const CONFIG_BACKUP_LABEL = "config";
+const CONFIG_BACKUP_LABEL = "config";
 export const GLOBAL_MARKER_START = "<!-- oso-code:start -->";
 export const GLOBAL_MARKER_END = "<!-- oso-code:end -->";
 
@@ -127,7 +127,7 @@ export function mergeGlobalAgents(globalFile: string, blockBody: string): void {
   writeFileAtomically(path.dirname(globalFile), globalFile, renderGlobalAgents(stripped.text, blockBody), ".oso-agents-md-");
 }
 
-export function snapshotsHoldingAConfig(backupsRoot: string): string[] {
+function snapshotsHoldingAConfig(backupsRoot: string): string[] {
   return installBackupsDeclaring(backupsRoot, OPENCODE_INSTALL_BACKUP_FORMAT, OPENCODE_INSTALL_BACKUP_LABEL).filter((backup) =>
     isReadableRegularFile(recordedConfigOf(backup)),
   );

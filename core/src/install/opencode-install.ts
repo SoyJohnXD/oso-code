@@ -57,8 +57,8 @@ import {
 import { firstExecutableOnPath } from "./verify-claude.ts";
 import { isDirectory, isoTimestamp, isReadableRegularFile, stateValue, withOwnerOnlyUmask } from "../state/store.ts";
 
-export const OWNER_INSTALLER = "installer";
-export const OWNER_OPERATOR = "operator";
+const OWNER_INSTALLER = "installer";
+const OWNER_OPERATOR = "operator";
 export const EXPECTED_SKILL_WRAPPER_COUNT = 9;
 export const PRESERVED_KEYS_FILE = "operator-preserved-keys";
 
@@ -114,7 +114,7 @@ export function openCodePayloadSources(repositoryRoot: string): OpenCodePayloadS
   };
 }
 
-export function payloadRefusal(sources: OpenCodePayloadSources): string | undefined {
+function payloadRefusal(sources: OpenCodePayloadSources): string | undefined {
   const missing = [
     { present: isReadableRegularFile(sources.global), message: `the OpenCode global guidance is missing: ${sources.global}` },
     { present: isDirectory(sources.skills), message: `the OpenCode skill wrappers are missing: ${sources.skills}` },
@@ -137,7 +137,7 @@ export function payloadRefusal(sources: OpenCodePayloadSources): string | undefi
   return undefined;
 }
 
-export function trustBytesRefusal(publishedHashes: string, rootKind: TrustRootKind, root: string): string | undefined {
+function trustBytesRefusal(publishedHashes: string, rootKind: TrustRootKind, root: string): string | undefined {
   const reading = openCodeTrustReading(publishedHashes, rootKind, root);
   if (reading.divergences.length > 0) {
     return `${rootKind} gate bytes do not match the published hashes: ${reading.divergences.map(trustDivergenceLine).join(";")}`;
@@ -418,7 +418,7 @@ function pruneOpenCodeInstallBackups(paths: OpenCodePaths, targets: OpenCodeInst
   return over;
 }
 
-export function migrateOpenCodeState(paths: OpenCodePaths, targets: OpenCodeInstallTargets, tx: BackupTransaction): string[] {
+function migrateOpenCodeState(paths: OpenCodePaths, targets: OpenCodeInstallTargets, tx: BackupTransaction): string[] {
   const migrated: string[] = [];
   for (const stateFile of stateFilesUnder(paths.stateRoot)) {
     const repository = path.basename(stateFile, ".state");

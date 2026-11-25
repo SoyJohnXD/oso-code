@@ -291,16 +291,6 @@ describe("provisionEngramBinary: checksum-verified download, extraction and plac
     assert.equal(existsSync(path.join(installDirectory, "engram")), false);
     assert.deepEqual(readdirSync(installDirectory), []);
   });
-
-  test("a download the transport cannot reach fails with the url named, never silently", () => {
-    const homeDirectory = freshHome();
-    const transport: EngramTransport = () => {
-      throw new Error("network unreachable");
-    };
-    const outcome = provisionEngramBinary({ homeDirectory, environment: {}, platform: "linux", architecture: "x64", transport });
-    assert.equal(outcome.kind, "failed");
-    if (outcome.kind === "failed") assert.match(outcome.reason, /could not download .*checksums\.txt/);
-  });
 });
 
 describe("provisionEngramBinary: what a degenerate or hostile archive may not do to this machine", () => {

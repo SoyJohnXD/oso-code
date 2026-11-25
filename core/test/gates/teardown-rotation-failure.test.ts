@@ -22,11 +22,7 @@ function stateRootPath(sandbox: StateSandbox): string {
 
 describe(
   "teardown gate: an aged events.jsonl whose rotation cannot rename (its containing directory chmod'd 555) " +
-    "propagates loud, matching plugin/hooks/cleanup-state.sh:76's unguarded 'mv -f' under set -euo pipefail " +
-    "(measured: env -u HOME-free bash dies 'Permission denied', exit 1, and separately, mv -f under this bash " +
-    "tolerates no race either — a missing source file also dies loud, 'No such file or directory', exit 1) — " +
-    "never the exit-0 silent teardown.ts:87-91's now-removed try/catch shipped, undetected because the only " +
-    "two rotation fixtures on file cover the success and skip paths alone",
+    "propagates loud, never an exit-0 silent teardown",
   { skip: skipUnlessChmodDeniesDirectoryWrites() },
   () => {
     test(

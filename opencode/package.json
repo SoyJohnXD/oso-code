@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "node --import ../core/test/support/sandbox-env.mjs --test"
+    "test": "node --import ./test-support/sandbox-env.mjs --test"
   },
   "devDependencies": {
     "@opencode/plugin": "2.2.6",

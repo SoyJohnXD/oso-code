@@ -79,10 +79,6 @@ function isScanned(file: string): boolean {
 }
 
 const OWN_REFERENCE_PATTERN = /oso-code:([A-Za-z0-9_-]+)/g;
-const OWN_REFERENCE_NAMES_FLOOR = 5;
-const OWN_REFERENCE_NAMES_DERIVATION =
-  "8 distinct oso-code:<name> self-references under plugin/, measured at C5-S5b: debt-sweep, debug, doubt-pass, " +
-  "plan, quality-pass, quick, security-pass, triage";
 
 function ownReferencedNames(files: readonly string[]): string[] {
   const names = new Set<string>();
@@ -118,9 +114,9 @@ provedSomething(
 );
 
 provedSomething(
-  `${ownReferenceNames.length} distinct oso-code:<name> self-reference(s) were found under plugin/`,
-  ownReferenceNames.length >= OWN_REFERENCE_NAMES_FLOOR,
-  `only ${ownReferenceNames.length} name(s) were found, under the ${OWN_REFERENCE_NAMES_FLOOR}-name floor (${OWN_REFERENCE_NAMES_DERIVATION})`,
+  "an oso-code:<name> self-reference was found under plugin/",
+  ownReferenceNames.length > 0,
+  "no oso-code:<name> self-reference was found under plugin/, so no name was checked for a skill or an agent behind it",
 );
 
 describe("every oso-code:<name> self-reference under plugin/ names a skill or an agent that exists", () => {

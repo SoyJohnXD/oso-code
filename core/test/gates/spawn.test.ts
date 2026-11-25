@@ -69,7 +69,7 @@ describe(
       assert.match(run.stderr, /No remedy is known for this failure\.\n$/);
     });
 
-    test("an allow is silence and exit 0 (read from plugin/hooks/lib.sh:329-331)", () => {
+    test("an allow is silence and exit 0", () => {
       const run = withStateSandbox("workspace", (sandbox) =>
         sandbox.run(GATE_ENTRY_POINT, ["commit"], { stdin: sandbox.expandJson(COMMIT_ENVELOPE) }),
       );

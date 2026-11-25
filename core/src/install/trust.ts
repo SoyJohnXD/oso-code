@@ -31,13 +31,11 @@ const RAW_INSTALLED_BYTES: InstalledBytes = (_relative, target) => readFileSync(
 
 export function trustDivergences(
   manifestFile: string,
-  isExcluded: (relative: string) => boolean,
   resolveTarget: (relative: string) => string | undefined,
   bytesOf: InstalledBytes = RAW_INSTALLED_BYTES,
 ): TrustDivergence[] {
   if (!isReadableRegularFile(manifestFile)) return [{ file: manifestFile, state: { kind: "missing-manifest" } }];
-  const trusted = parseTrustManifest(readFileSync(manifestFile, "utf8")).filter((row) => !isExcluded(row.file));
-  return trustRowDivergences(trusted, resolveTarget, bytesOf);
+  return trustRowDivergences(parseTrustManifest(readFileSync(manifestFile, "utf8")), resolveTarget, bytesOf);
 }
 
 export function trustRowDivergences(

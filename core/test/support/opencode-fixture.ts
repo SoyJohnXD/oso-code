@@ -8,8 +8,8 @@ import { guardRepositoryGitConfig } from "./repository-git-config-guard.ts";
 import { posixSpelled } from "./repository-paths.ts";
 import { repositoryRoot } from "./state-sandbox.ts";
 
-export const SHIM_CALL_LOG_KEY = "OSO_OPENCODE_SHIM_CALL_LOG";
-export const SHIM_UNANSWERED_EXIT = 64;
+const SHIM_CALL_LOG_KEY = "OSO_OPENCODE_SHIM_CALL_LOG";
+const SHIM_UNANSWERED_EXIT = 64;
 
 const HOST_BINARY_NAMES = [OPENCODE_BINARY_NAME, `${OPENCODE_BINARY_NAME}.exe`, `${OPENCODE_BINARY_NAME}.cmd`] as const;
 

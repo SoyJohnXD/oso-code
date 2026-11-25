@@ -8,7 +8,7 @@ import {
   repositoryRoot,
   skipUnlessGitSeedsRepositories,
   skipUnlessSpawnable,
-  STATE_SUBJECTS,
+  STATE_SUBJECT,
   withStateSandbox,
   type StateSubject,
 } from "../support/state-sandbox.ts";
@@ -98,15 +98,13 @@ describe("a ref the project cannot resolve is refused by name rather than report
   });
 });
 
-for (const subject of STATE_SUBJECTS) {
-  describe(
-    `the shipped ${subject.name} carries the same scan as the source it is bundled from`,
-    { skip: skipUnlessSpawnable(subject) || skipUnlessGitSeedsRepositories() },
-    () => {
-      test(`${FAILING_CHECK_FIXTURE} produces the same hits and coverage through ${subject.name}`, () => {
-        assert.ok(failingCheckFixture !== undefined);
-        assertScanMatches(subject, failingCheckFixture);
-      });
-    },
-  );
-}
+describe(
+  `the shipped ${STATE_SUBJECT.name} carries the same scan as the source it is bundled from`,
+  { skip: skipUnlessSpawnable(STATE_SUBJECT) || skipUnlessGitSeedsRepositories() },
+  () => {
+    test(`${FAILING_CHECK_FIXTURE} produces the same hits and coverage through ${STATE_SUBJECT.name}`, () => {
+      assert.ok(failingCheckFixture !== undefined);
+      assertScanMatches(STATE_SUBJECT, failingCheckFixture);
+    });
+  },
+);

@@ -226,7 +226,7 @@ describe("ownership table: .hooks[] is remove-only", () => {
       settingsFile,
       JSON.stringify({
         hooks: {
-          PreToolUse: [{ hooks: [{ command: "bash plugin/hooks/check-plan-contract.sh" }] }, { hooks: [{ command: "node plugin/dist/gate.js commit" }] }],
+          PreToolUse: [{ hooks: [{ command: "bash ~/.claude/hooks/check-plan-contract.sh" }] }, { hooks: [{ command: "node plugin/dist/gate.js commit" }] }],
           SessionStart: [{ hooks: [{ command: "bash /old/gentle-ai/hook.sh" }] }],
         },
       }),

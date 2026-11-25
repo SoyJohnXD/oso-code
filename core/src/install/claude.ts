@@ -55,7 +55,7 @@ export type ClaudeCommandInput = Readonly<{
 
 export type ClaudeOutcome = Readonly<{ report: string; exitCode: number }>;
 
-export class ClaudePluginInstallError extends Error {
+class ClaudePluginInstallError extends Error {
   readonly output: string;
   constructor(output: string) {
     super(`claude plugin install oso-code@oso-code failed: ${output}`);
@@ -441,7 +441,7 @@ function engramManualInstallCommand(platform: NodeJS.Platform): string {
     : `install engram yourself — brew install gentleman-programming/tap/engram, or go install github.com/${ENGRAM_SOURCE_REPO}/cmd/engram@v${SUPPORTED_ENGRAM_VERSION}`;
 }
 
-export function wireFallow(environment: NodeJS.ProcessEnv, homeDirectory: string, platform: NodeJS.Platform): WiringEntry {
+function wireFallow(environment: NodeJS.ProcessEnv, homeDirectory: string, platform: NodeJS.Platform): WiringEntry {
   const fallowCommand = resolveFallowMcpCommand(environment, homeDirectory, platform) ?? "fallow-mcp";
   const fix = `npm install --global fallow@${SUPPORTED_FALLOW_VERSION}, then claude mcp add --scope user fallow -- ${fallowCommand}`;
   const npmProbe = spawnSync("npm", ["--version"], { env: environment, encoding: "utf8" });

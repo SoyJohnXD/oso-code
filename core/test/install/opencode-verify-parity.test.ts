@@ -230,7 +230,7 @@ describe("the local-check rows this half owns are named, and every other row is 
 });
 
 describe("the external-directory reach row reads the patterns the installer writes against the host surfaces the host itself executes", () => {
-  test("the patterns C0-D5(a) leaves reach the surfaces the residual declares and no others, so the row's two sides are the same reading", () => {
+  test("the patterns the profile leaves reach the surfaces the residual declares and no others, so the row's two sides are the same reading", () => {
     assert.deepEqual(hostSurfacesReachedBy(HARNESS_EXTERNAL_DIRECTORIES), REACHES_THE_EDIT_CONTROL_BOUNDS);
     assert.equal(
       harnessExternalDirectoryReach(HARNESS_EXTERNAL_DIRECTORIES),
@@ -332,7 +332,7 @@ describe("with the shim absent, where the not-on-path result is the one the vers
   });
 });
 
-describe("the PATH both loops are built on, read by resolution alone so the G4 floor stands on every leg rather than on the one that spawns", () => {
+describe("the PATH both loops are built on, read by resolution alone so the isolation floor stands on every leg rather than on the one that spawns", () => {
   test("the bare path reaches no opencode at all, through the resolution openCodeHostProbes itself performs", () => {
     assert.equal(firstExecutableOnPath(resolutionEnvironment(bareMachinePath()), OPENCODE_BINARY_NAME), undefined);
     assert.equal(openCodeHostProbes(resolutionEnvironment(bareMachinePath())).version, undefined);
@@ -500,13 +500,10 @@ describe("the agent model row reads the installed keys against the mirror of the
 });
 
 describe(
-  "the two divergences C3-S4 measured and did not fix, each pinned as MEASURED and never as ratified (C2-D16) — the name says the behaviour " +
-    "awaits the operator's ruling, so a refactor that moves it goes red and the decision that resolves it renames the case; the oracle half " +
-    "of each measurement went with the bash and only the port's side is readable now",
+  "two divergences from the retired oracle, pinned as measured and never as ratified: the name says the behaviour awaits the operator's ruling, so a refactor that moves it goes red and the decision that resolves it renames the case",
   () => {
     test(
-      "UNRULED, AWAITING THE OPERATOR — C3-S4 residual (7)(a): a falsy non-object mcp read valid by the oracle this child " +
-        "retired and malformed by the port, and this pins the port's side of that measurement, which is the only side left to read",
+      "UNRULED, AWAITING THE OPERATOR: a falsy non-object mcp is read malformed by the port, which the retired oracle read valid",
       { skip: FIXTURE_SHIMS_UNREACHABLE_ON_THE_INJECTED_PATH },
       () => {
         for (const declaration of FALSY_MCP_DECLARATIONS) {
@@ -517,8 +514,7 @@ describe(
     );
 
     test(
-      "UNRULED, AWAITING THE OPERATOR — C3-S4 residual (7)(b): an unreadable config read malformed and dropped by the oracle " +
-        "this child retired and missing by the port on both rows, and this pins the port's side, which is the only side left to read",
+      "UNRULED, AWAITING THE OPERATOR: an unreadable config is read missing on both rows by the port, which the retired oracle read malformed and dropped",
       { skip: FIXTURE_SHIMS_UNREACHABLE_ON_THE_INJECTED_PATH || skipUnlessChmodMakesFilesUnreadable() },
       () => {
         const damaged = damagedFixture({ label: "a config no mode lets this user read" });

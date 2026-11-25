@@ -14,6 +14,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { provedSomething } from "./proved.ts";
+import { skipUnlessKernelRunsScriptFixtures } from "./win32-skip-guards.ts";
 
 export const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 
@@ -22,16 +23,17 @@ export type StateSubject = {
   readonly command: readonly string[];
 };
 
-export const STATE_SUBJECTS: readonly StateSubject[] = [
-  {
-    name: "plugin/bin/oso-state",
-    command: [path.join(repositoryRoot, "plugin", "bin", "oso-state")],
-  },
-  {
-    name: "node plugin/dist/oso-state.js",
-    command: ["node", path.join(repositoryRoot, "plugin", "dist", "oso-state.js")],
-  },
-];
+const STATE_EXECUTABLE: StateSubject = {
+  name: "plugin/bin/oso-state",
+  command: [path.join(repositoryRoot, "plugin", "bin", "oso-state")],
+};
+
+export const STATE_BUNDLE: StateSubject = {
+  name: "node plugin/dist/oso-state.js",
+  command: ["node", path.join(repositoryRoot, "plugin", "dist", "oso-state.js")],
+};
+
+export const STATE_SUBJECT: StateSubject = skipUnlessKernelRunsScriptFixtures() === false ? STATE_EXECUTABLE : STATE_BUNDLE;
 
 export type SeededEntry =
   | string
@@ -111,16 +113,11 @@ export function skipUnlessSpawnable(subject: StateSubject): false | string {
   return `${subject.name} cannot be spawned here, so its behaviour cannot be measured on this platform`;
 }
 
-function unmeasurableSubjectsReport(): string {
-  const reasons = STATE_SUBJECTS.map((subject) => `${subject.name}: ${skipUnlessSpawnable(subject)}`);
-  return `zero of ${STATE_SUBJECTS.length} configured subjects were measurable\n${reasons.join("\n")}`;
-}
-
-export function provedSomeSubjectIsMeasurable(): void {
+export function provedTheStateSubjectIsMeasurable(): void {
   provedSomething(
-    `at least one of ${STATE_SUBJECTS.length} configured subject(s) is measurable here`,
-    STATE_SUBJECTS.some((subject) => skipUnlessSpawnable(subject) === false),
-    unmeasurableSubjectsReport(),
+    `${STATE_SUBJECT.name} is measurable here`,
+    skipUnlessSpawnable(STATE_SUBJECT) === false,
+    `${STATE_SUBJECT.name} was not measurable: ${skipUnlessSpawnable(STATE_SUBJECT)}`,
   );
 }
 

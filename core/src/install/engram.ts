@@ -30,7 +30,7 @@ export type EngramProvisionOutcome =
   | Readonly<{ kind: "installed-off-path"; binary: string; installDirectory: string }>
   | Readonly<{ kind: "failed"; reason: string }>;
 
-export class EngramProvisionError extends Error {
+class EngramProvisionError extends Error {
   constructor(message: string, options?: ErrorOptions) {
     super(message, options);
     this.name = "EngramProvisionError";

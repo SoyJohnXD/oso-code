@@ -1,0 +1,688 @@
+{
+  "gate": "autocontinue",
+  "cases": [
+    {
+      "name": "autocontinue gate: a delegation still in flight with no watchdog after this hook already continued the turn is allowed rather than looped",
+      "argv": [],
+      "env": {},
+      "state_before": {
+        ".local/state/oso-code/{repo}.state": "auto=running\nauto_change=auto-continuity\nsession=test-session\n"
+      },
+      "cwd": "workspace",
+      "stdin": "{\"session_id\":\"test-session\",\"transcript_path\":\"{home}/.claude/projects/oso-code/test-session.jsonl\",\"cwd\":\"{cwd}\",\"hook_event_name\":\"Stop\",\"stop_hook_active\":true,\"background_tasks\":[{\"id\":\"a1f00d\",\"type\":\"subagent\",\"status\":\"running\",\"description\":\"applier\",\"agent_type\":\"oso-code:applier\"}]}",
+      "expect": {
+        "exit": 0,
+        "stdout": "{}",
+        "stderr": "",
+        "events_appended": [
+          {
+            "event": "auto-continue-watch-unstarted",
+            "session": "test-session",
+            "command": "background_tasks=array in_flight=1",
+            "schema": 2,
+            "gate": "auto-continue.sh",
+            "hook_event": "Stop"
+          }
+        ]
+      }
+    },
+    {
+      "name": "autocontinue gate: a finished run ends its turn untouched",
+      "argv": [],
+      "env": {},
+      "state_before": {
+        ".local/state/oso-code/{repo}.state": "auto=done\nauto_change=auto-continuity\nsession=test-session\n"
+      },
+      "cwd": "workspace",
+      "stdin": "{\"session_id\":\"test-session\",\"transcript_path\":\"{home}/.claude/projects/oso-code/test-session.jsonl\",\"cwd\":\"{cwd}\",\"hook_event_name\":\"Stop\",\"stop_hook_active\":false}",
+      "expect": {
+        "exit": 0,
+        "stdout": "{}",
+        "stderr": "",
+        "events_appended": []
+      }
+    },
+    {
+      "name": "autocontinue gate: a foreign session ends its turn untouched",
+      "argv": [],
+      "env": {},
+      "state_before": {
+        ".local/state/oso-code/{repo}.state": "auto=running\nauto_change=auto-continuity\nsession=test-session\n"
+      },
+      "cwd": "workspace",
+      "stdin": "{\"session_id\":\"another-session\",\"transcript_path\":\"{home}/.claude/projects/oso-code/test-session.jsonl\",\"cwd\":\"{cwd}\",\"hook_event_name\":\"Stop\",\"stop_hook_active\":false}",
+      "expect": {
+        "exit": 0,
+        "stdout": "{}",
+        "stderr": "",
+        "events_appended": []
+      }
+    },
+    {
+      "name": "autocontinue gate: a garbage state file fails open and writes no run trail",
+      "argv": [],
+      "env": {},
+      "state_before": {
+        ".local/state/oso-code/{repo}.state": "this file is not state at all\n"
+      },
+      "cwd": "workspace",
+      "stdin": "{\"session_id\":\"test-session\",\"transcript_path\":\"{home}/.claude/projects/oso-code/test-session.jsonl\",\"cwd\":\"{cwd}\",\"hook_event_name\":\"Stop\",\"stop_hook_active\":false}",
+      "expect": {
+        "exit": 0,
+        "stdout": "{}",
+        "stderr": "",
+        "events_appended": [],
+        "state_after": {
+          ".local/state/oso-code/runs": null
+        }
+      }
+    },
+    {
+      "name": "autocontinue gate: a held turn spends none of the net, so the tally it inherits is the tally it leaves",
+      "argv": [],
+      "env": {},
+      "state_before": {
+        ".local/state/oso-code/{repo}.state": "auto=running\nauto_change=auto-continuity\nsession=test-session\n",
+        ".local/state/oso-code/runs/{repo}/auto-continuity.pushes": "pushes=2\nheads=\nauto=running\n"
+      },
+      "cwd": "workspace",
+      "stdin": "{\"session_id\":\"test-session\",\"transcript_path\":\"{home}/.claude/projects/oso-code/test-session.jsonl\",\"cwd\":\"{cwd}\",\"hook_event_name\":\"Stop\",\"stop_hook_active\":true,\"background_tasks\":[{\"id\":\"a1f00d\",\"type\":\"subagent\",\"status\":\"running\",\"description\":\"applier\",\"agent_type\":\"oso-code:applier\"}]}",
+      "expect": {
+        "exit": 0,
+        "stdout": "{}",
+        "stderr": "",
+        "state_after": {
+          ".local/state/oso-code/runs/{repo}/auto-continuity.pushes": "pushes=2\nheads=\nauto=running\n"
+        },
+        "events_appended": [
+          {
+            "event": "auto-continue-watch-unstarted",
+            "session": "test-session",
+            "command": "background_tasks=array in_flight=1",
+            "schema": 2,
+            "gate": "auto-continue.sh",
+            "hook_event": "Stop"
+          }
+        ]
+      }
+    },
+    {
+      "name": "autocontinue gate: a journal milestone alone is no progress on this host, so the fourth push still reaches the cap",
+      "argv": [],
+      "env": {},
+      "state_before": {
+        ".local/state/oso-code/{repo}.state": "auto=running\nauto_change=auto-continuity\nsession=test-session\n",
+        ".local/state/oso-code/runs/{repo}/auto-continuity.pushes": "pushes=3\nheads=\nauto=running\n",
+        ".local/state/oso-code/runs/{repo}/auto-continuity.log": "2026-08-27T00:00:00Z the applier landed slice 1\n"
+      },
+      "cwd": "workspace",
+      "stdin": "{\"session_id\":\"test-session\",\"transcript_path\":\"{home}/.claude/projects/oso-code/test-session.jsonl\",\"cwd\":\"{cwd}\",\"hook_event_name\":\"Stop\",\"stop_hook_active\":true}",
+      "expect": {
+        "exit": 0,
+        "stdout": "{}",
+        "stderr": "",
+        "state_after": {
+          ".local/state/oso-code/runs/{repo}/auto-continuity.pushes": {
+            "contains": [
+              "pushes=4"
+            ]
+          }
+        },
+        "events_appended": [
+          {
+            "event": "auto-continue-heads-unreadable",
+            "session": "test-session",
+            "command": "{present}",
+            "schema": 2,
+            "gate": "auto-continue.sh",
+            "hook_event": "Stop"
+          }
+        ]
+      }
+    },
+    {
+      "name": "autocontinue gate: a label carrying a space is no evidence of live work, so the turn is pushed and counted as an unmarked run",
+      "argv": [],
+      "env": {},
+      "state_before": {
+        ".local/state/oso-code/{repo}.state": "auto=running\nauto_change=auto-continuity\nsession=test-session\nauto_wait=slice 3\n"
+      },
+      "cwd": "workspace",
+      "stdin": "{\"session_id\":\"test-session\",\"transcript_path\":\"{home}/.claude/projects/oso-code/test-session.jsonl\",\"cwd\":\"{cwd}\",\"hook_event_name\":\"Stop\",\"stop_hook_active\":false}",
+      "expect": {
+        "exit": 0,
+        "stdout": {
+          "contains": [
+            "\"shouldContinue\":true",
+            "\"decision\":\"block\""
+          ]
+        },
+        "state_after": {
+          ".local/state/oso-code/runs/{repo}/auto-continuity.pushes": "pushes=1\nheads=\nauto=running\ncompleted_agents=0\n"
+        },
+        "events_appended": [
+          {
+            "event": "auto-continue-heads-unreadable",
+            "session": "test-session",
+            "command": "{present}",
+            "schema": 2,
+            "gate": "auto-continue.sh",
+            "hook_event": "Stop"
+          },
+          {
+            "event": "auto-continued",
+            "session": "test-session",
+            "command": "background_tasks=absent in_flight=0",
+            "schema": 2,
+            "gate": "auto-continue.sh",
+            "hook_event": "Stop"
+          }
+        ]
+      }
+    },
+    {
+      "name": "autocontinue gate: a label opening on a hyphen is no evidence of live work, so the turn is pushed and counted as an unmarked run",
+      "argv": [],
+      "env": {},
+      "state_before": {
+        ".local/state/oso-code/{repo}.state": "auto=running\nauto_change=auto-continuity\nsession=test-session\nauto_wait=-3\n"
+      },
+      "cwd": "workspace",
+      "stdin": "{\"session_id\":\"test-session\",\"transcript_path\":\"{home}/.claude/projects/oso-code/test-session.jsonl\",\"cwd\":\"{cwd}\",\"hook_event_name\":\"Stop\",\"stop_hook_active\":false}",
+      "expect": {
+        "exit": 0,
+        "stdout": {
+          "contains": [
+            "\"shouldContinue\":true",
+            "\"decision\":\"block\""
+          ]
+        },
+        "state_after": {
+          ".local/state/oso-code/runs/{repo}/auto-continuity.pushes": "pushes=1\nheads=\nauto=running\ncompleted_agents=0\n"
+        },
+        "events_appended": [
+          {
+            "event": "auto-continue-heads-unreadable",
+            "session": "test-session",
+            "command": "{present}",
+            "schema": 2,
+            "gate": "auto-continue.sh",
+            "hook_event": "Stop"
+          },
+          {
+            "event": "auto-continued",
+            "session": "test-session",
+            "command": "background_tasks=absent in_flight=0",
+            "schema": 2,
+            "gate": "auto-continue.sh",
+            "hook_event": "Stop"
+          }
+        ]
+      }
+    },
+    {
+      "name": "autocontinue gate: a label past the length the reader admits is no evidence of live work, so the turn is pushed and counted as an unmarked run",
+      "argv": [],
+      "env": {},
+      "state_before": {
+        ".local/state/oso-code/{repo}.state": "auto=running\nauto_change=auto-continuity\nsession=test-session\nauto_wait=w9999999999999999999999999999999999999999999999999999999999999999\n"
+      },
+      "cwd": "workspace",
+      "stdin": "{\"session_id\":\"test-session\",\"transcript_path\":\"{home}/.claude/projects/oso-code/test-session.jsonl\",\"cwd\":\"{cwd}\",\"hook_event_name\":\"Stop\",\"stop_hook_active\":false}",
+      "expect": {
+        "exit": 0,
+        "stdout": {
+          "contains": [
+            "\"shouldContinue\":true",
+            "\"decision\":\"block\""
+          ]
+        },
+        "state_after": {
+          ".local/state/oso-code/runs/{repo}/auto-continuity.pushes": "pushes=1\nheads=\nauto=running\ncompleted_agents=0\n"
+        },
+        "events_appended": [
+          {
+            "event": "auto-continue-heads-unreadable",
+            "session": "test-session",
+            "command": "{present}",
+            "schema": 2,
+            "gate": "auto-continue.sh",
+            "hook_event": "Stop"
+          },
+          {
+            "event": "auto-continued",
+            "session": "test-session",
+            "command": "background_tasks=absent in_flight=0",
+            "schema": 2,
+            "gate": "auto-continue.sh",
+            "hook_event": "Stop"
+          }
+        ]
+      }
+    },
+    {
+      "name": "autocontinue gate: a parked run ends its turn untouched",
+      "argv": [],
+      "env": {},
+      "state_before": {
+        ".local/state/oso-code/{repo}.state": "auto=parked\nauto_change=auto-continuity\nsession=test-session\n"
+      },
+      "cwd": "workspace",
+      "stdin": "{\"session_id\":\"test-session\",\"transcript_path\":\"{home}/.claude/projects/oso-code/test-session.jsonl\",\"cwd\":\"{cwd}\",\"hook_event_name\":\"Stop\",\"stop_hook_active\":false}",
+      "expect": {
+        "exit": 0,
+        "stdout": "{}",
+        "stderr": "",
+        "events_appended": []
+      }
+    },
+    {
+      "name": "autocontinue gate: a payload naming no session fails open and writes no run trail",
+      "argv": [],
+      "env": {},
+      "state_before": {
+        ".local/state/oso-code/{repo}.state": "auto=running\nauto_change=auto-continuity\nsession=test-session\n"
+      },
+      "cwd": "workspace",
+      "stdin": "{\"hook_event_name\":\"Stop\"}",
+      "expect": {
+        "exit": 0,
+        "stdout": "{}",
+        "stderr": "",
+        "events_appended": [],
+        "state_after": {
+          ".local/state/oso-code/runs": null
+        }
+      }
+    },
+    {
+      "name": "autocontinue gate: a payload that is not JSON at all fails open and writes no run trail",
+      "argv": [],
+      "env": {},
+      "state_before": {
+        ".local/state/oso-code/{repo}.state": "auto=running\nauto_change=auto-continuity\nsession=test-session\n"
+      },
+      "cwd": "workspace",
+      "stdin": "this payload is not JSON",
+      "expect": {
+        "exit": 0,
+        "stdout": "{}",
+        "stderr": "",
+        "events_appended": [],
+        "state_after": {
+          ".local/state/oso-code/runs": null
+        }
+      }
+    },
+    {
+      "name": "autocontinue gate: a push tally the net cannot read allows the stop and puts the cause on the record",
+      "argv": [],
+      "env": {},
+      "state_before": {
+        ".local/state/oso-code/{repo}.state": "auto=running\nauto_change=auto-continuity\nsession=test-session\n",
+        ".local/state/oso-code/runs/{repo}/auto-continuity.pushes": {
+          "kind": "directory"
+        }
+      },
+      "cwd": "workspace",
+      "stdin": "{\"session_id\":\"test-session\",\"transcript_path\":\"{home}/.claude/projects/oso-code/test-session.jsonl\",\"cwd\":\"{cwd}\",\"hook_event_name\":\"Stop\",\"stop_hook_active\":false}",
+      "expect": {
+        "exit": 0,
+        "stdout": "{}",
+        "stderr": "",
+        "events_appended": [
+          {
+            "event": "auto-continue-heads-unreadable",
+            "session": "test-session",
+            "command": "{present}",
+            "schema": 2,
+            "gate": "auto-continue.sh",
+            "hook_event": "Stop"
+          },
+          {
+            "event": "auto-continue-degraded",
+            "session": "test-session",
+            "command": "the push tally is not a readable file",
+            "schema": 2,
+            "gate": "auto-continue.sh",
+            "hook_event": "Stop"
+          }
+        ]
+      }
+    },
+    {
+      "name": "autocontinue gate: a push tally the net cannot write allows the stop and puts the cause on the record",
+      "argv": [],
+      "env": {},
+      "state_before": {
+        ".local/state/oso-code/{repo}.state": "auto=running\nauto_change=auto-continuity\nsession=test-session\n",
+        ".local/state/oso-code/runs/{repo}": "a file stands where the run directory belongs\n"
+      },
+      "cwd": "workspace",
+      "stdin": "{\"session_id\":\"test-session\",\"transcript_path\":\"{home}/.claude/projects/oso-code/test-session.jsonl\",\"cwd\":\"{cwd}\",\"hook_event_name\":\"Stop\",\"stop_hook_active\":false}",
+      "expect": {
+        "exit": 0,
+        "stdout": "{}",
+        "stderr": "",
+        "events_appended": [
+          {
+            "event": "auto-continue-heads-unreadable",
+            "session": "test-session",
+            "command": "{present}",
+            "schema": 2,
+            "gate": "auto-continue.sh",
+            "hook_event": "Stop"
+          },
+          {
+            "event": "auto-continue-degraded",
+            "session": "test-session",
+            "command": "{present}",
+            "gate": "auto-continue.sh",
+            "hook_event": "Stop"
+          }
+        ]
+      }
+    },
+    {
+      "name": "autocontinue gate: a running subagent with no watchdog blocks once with the order to start the watch, and a stale wait label and mark are never called lost",
+      "argv": [],
+      "env": {},
+      "state_before": {
+        ".local/state/oso-code/{repo}.state": "auto=running\nauto_change=auto-continuity\nsession=test-session\nauto_wait=18\n",
+        ".local/state/oso-code/runs/{repo}/test-session.waiting": {
+          "kind": "file",
+          "content": "run=auto-continuity\nsession=test-session\njournal_bytes=0\nrenewals=0\n",
+          "aged": true
+        },
+        ".claude/projects/oso-code/test-session/subagents/agent-a1f00d.jsonl": "{}\n"
+      },
+      "cwd": "workspace",
+      "stdin": "{\"session_id\":\"test-session\",\"transcript_path\":\"{home}/.claude/projects/oso-code/test-session.jsonl\",\"cwd\":\"{cwd}\",\"hook_event_name\":\"Stop\",\"stop_hook_active\":false,\"background_tasks\":[{\"id\":\"a1f00d\",\"type\":\"subagent\",\"status\":\"running\",\"description\":\"applier\",\"agent_type\":\"oso-code:applier\"}]}",
+      "expect": {
+        "exit": 0,
+        "stdout": {
+          "contains": [
+            "\"shouldContinue\":true",
+            "\"decision\":\"block\"",
+            "\\\"${OSO_STATE_BIN:-oso-state}\\\" --session \\\"${CLAUDE_CODE_SESSION_ID}\\\" watch",
+            "run_in_background: true",
+            "end the turn"
+          ]
+        },
+        "stderr": "",
+        "state_after": {
+          ".local/state/oso-code/runs/{repo}/test-session.waiting": "run=auto-continuity\nsession=test-session\njournal_bytes=0\nrenewals=0\n",
+          ".local/state/oso-code/runs/{repo}/auto-continuity.pushes": "{present}"
+        },
+        "events_appended": [
+          {
+            "event": "auto-continue-heads-unreadable",
+            "session": "test-session",
+            "command": "{present}",
+            "schema": 2,
+            "gate": "auto-continue.sh",
+            "hook_event": "Stop"
+          },
+          {
+            "event": "auto-continue-watch-requested",
+            "session": "test-session",
+            "command": "background_tasks=array in_flight=1",
+            "schema": 2,
+            "gate": "auto-continue.sh",
+            "hook_event": "Stop"
+          }
+        ]
+      }
+    },
+    {
+      "name": "autocontinue gate: a stale wait label and its mark are no delegation at all, so the turn is pushed and the mark is left for session start",
+      "argv": [],
+      "env": {},
+      "state_before": {
+        ".local/state/oso-code/{repo}.state": "auto=running\nauto_change=auto-continuity\nsession=test-session\nauto_wait=wave-2\n",
+        ".local/state/oso-code/runs/{repo}/test-session.waiting": "run=auto-continuity\nsession=test-session\njournal_bytes=0\nrenewals=0\n"
+      },
+      "cwd": "workspace",
+      "stdin": "{\"session_id\":\"test-session\",\"transcript_path\":\"{home}/.claude/projects/oso-code/test-session.jsonl\",\"cwd\":\"{cwd}\",\"hook_event_name\":\"Stop\",\"stop_hook_active\":false}",
+      "expect": {
+        "exit": 0,
+        "stdout": {
+          "contains": [
+            "\"shouldContinue\":true",
+            "\"decision\":\"block\"",
+            "do NOT relaunch it"
+          ]
+        },
+        "stderr": "",
+        "state_after": {
+          ".local/state/oso-code/runs/{repo}/test-session.waiting": "run=auto-continuity\nsession=test-session\njournal_bytes=0\nrenewals=0\n",
+          ".local/state/oso-code/runs/{repo}/auto-continuity.pushes": "pushes=1\nheads=\nauto=running\ncompleted_agents=0\n"
+        },
+        "events_appended": [
+          {
+            "event": "auto-continue-heads-unreadable",
+            "session": "test-session",
+            "command": "{present}",
+            "schema": 2,
+            "gate": "auto-continue.sh",
+            "hook_event": "Stop"
+          },
+          {
+            "event": "auto-continued",
+            "session": "test-session",
+            "command": "background_tasks=absent in_flight=0",
+            "schema": 2,
+            "gate": "auto-continue.sh",
+            "hook_event": "Stop"
+          }
+        ]
+      }
+    },
+    {
+      "name": "autocontinue gate: a state path that is a directory fails open and writes no run trail",
+      "argv": [],
+      "env": {},
+      "state_before": {
+        ".local/state/oso-code/{repo}.state": {
+          "kind": "directory"
+        }
+      },
+      "cwd": "workspace",
+      "stdin": "{\"session_id\":\"test-session\",\"transcript_path\":\"{home}/.claude/projects/oso-code/test-session.jsonl\",\"cwd\":\"{cwd}\",\"hook_event_name\":\"Stop\",\"stop_hook_active\":false}",
+      "expect": {
+        "exit": 0,
+        "stdout": "{}",
+        "stderr": "",
+        "events_appended": [],
+        "state_after": {
+          ".local/state/oso-code/runs": null
+        }
+      }
+    },
+    {
+      "name": "autocontinue gate: a turn ending while an unattended run is in flight is pushed back into motion",
+      "argv": [],
+      "env": {},
+      "state_before": {
+        ".local/state/oso-code/{repo}.state": "auto=running\nauto_change=auto-continuity\nsession=test-session\n"
+      },
+      "cwd": "workspace",
+      "stdin": "{\"session_id\":\"test-session\",\"transcript_path\":\"{home}/.claude/projects/oso-code/test-session.jsonl\",\"cwd\":\"{cwd}\",\"hook_event_name\":\"Stop\",\"stop_hook_active\":false}",
+      "expect": {
+        "exit": 0,
+        "stdout": {
+          "contains": [
+            "\"shouldContinue\":true",
+            "\"decision\":\"block\""
+          ]
+        },
+        "stderr": "",
+        "state_after": {
+          ".local/state/oso-code/runs/{repo}/auto-continuity.pushes": "pushes=1\nheads=\nauto=running\ncompleted_agents=0\n"
+        },
+        "events_appended": [
+          {
+            "event": "auto-continue-heads-unreadable",
+            "session": "test-session",
+            "command": "{present}",
+            "schema": 2,
+            "gate": "auto-continue.sh",
+            "hook_event": "Stop"
+          },
+          {
+            "event": "auto-continued",
+            "session": "test-session",
+            "command": "background_tasks=absent in_flight=0",
+            "schema": 2,
+            "gate": "auto-continue.sh",
+            "hook_event": "Stop"
+          }
+        ]
+      }
+    },
+    {
+      "name": "autocontinue gate: a turn this hook already continued counts as a push even before any tally exists",
+      "argv": [],
+      "env": {},
+      "state_before": {
+        ".local/state/oso-code/{repo}.state": "auto=running\nauto_change=auto-continuity\nsession=test-session\n"
+      },
+      "cwd": "workspace",
+      "stdin": "{\"session_id\":\"test-session\",\"transcript_path\":\"{home}/.claude/projects/oso-code/test-session.jsonl\",\"cwd\":\"{cwd}\",\"hook_event_name\":\"Stop\",\"stop_hook_active\":true}",
+      "expect": {
+        "exit": 0,
+        "stdout": {
+          "contains": [
+            "\"shouldContinue\":true",
+            "\"decision\":\"block\""
+          ]
+        },
+        "state_after": {
+          ".local/state/oso-code/runs/{repo}/auto-continuity.pushes": "pushes=2\nheads=\nauto=running\ncompleted_agents=0\n"
+        },
+        "events_appended": [
+          {
+            "event": "auto-continue-heads-unreadable",
+            "session": "test-session",
+            "command": "{present}",
+            "schema": 2,
+            "gate": "auto-continue.sh",
+            "hook_event": "Stop"
+          },
+          {
+            "event": "auto-continued",
+            "session": "test-session",
+            "command": "background_tasks=absent in_flight=0",
+            "schema": 2,
+            "gate": "auto-continue.sh",
+            "hook_event": "Stop"
+          }
+        ]
+      }
+    },
+    {
+      "name": "autocontinue gate: an unmarked repository ends its turn untouched",
+      "argv": [],
+      "env": {},
+      "state_before": {},
+      "cwd": "workspace",
+      "stdin": "{\"session_id\":\"test-session\",\"transcript_path\":\"{home}/.claude/projects/oso-code/test-session.jsonl\",\"cwd\":\"{cwd}\",\"hook_event_name\":\"Stop\",\"stop_hook_active\":false}",
+      "expect": {
+        "exit": 0,
+        "stdout": "{}",
+        "stderr": "",
+        "events_appended": []
+      }
+    },
+    {
+      "name": "autocontinue gate: past the cap every stop stands and the trail says so exactly once",
+      "argv": [],
+      "env": {},
+      "state_before": {
+        ".local/state/oso-code/{repo}.state": "auto=running\nauto_change=auto-continuity\nsession=test-session\n",
+        ".local/state/oso-code/runs/{repo}/auto-continuity.pushes": "pushes=4\nheads=\nauto=running\n",
+        ".local/state/oso-code/runs/{repo}/auto-continuity.log": "2026-08-27T00:00:00Z auto-continue: cap reached after 3 pushes without progress — allowing the stop\n"
+      },
+      "cwd": "workspace",
+      "stdin": "{\"session_id\":\"test-session\",\"transcript_path\":\"{home}/.claude/projects/oso-code/test-session.jsonl\",\"cwd\":\"{cwd}\",\"hook_event_name\":\"Stop\",\"stop_hook_active\":true}",
+      "expect": {
+        "exit": 0,
+        "stdout": "{}",
+        "stderr": "",
+        "state_after": {
+          ".local/state/oso-code/runs/{repo}/auto-continuity.log": {
+            "journal_texts_in": "auto-continue: cap reached after 3 pushes without progress — allowing the stop"
+          }
+        },
+        "events_appended": [
+          {
+            "event": "auto-continue-heads-unreadable",
+            "session": "test-session",
+            "command": "{present}",
+            "schema": 2,
+            "gate": "auto-continue.sh",
+            "hook_event": "Stop"
+          }
+        ]
+      }
+    },
+    {
+      "name": "autocontinue gate: the fourth push without a milestone reaches the cap and the stop stands in the journal",
+      "argv": [],
+      "env": {},
+      "state_before": {
+        ".local/state/oso-code/{repo}.state": "auto=running\nauto_change=auto-continuity\nsession=test-session\n",
+        ".local/state/oso-code/runs/{repo}/auto-continuity.pushes": "pushes=3\nheads=\nauto=running\n"
+      },
+      "cwd": "workspace",
+      "stdin": "{\"session_id\":\"test-session\",\"transcript_path\":\"{home}/.claude/projects/oso-code/test-session.jsonl\",\"cwd\":\"{cwd}\",\"hook_event_name\":\"Stop\",\"stop_hook_active\":true}",
+      "expect": {
+        "exit": 0,
+        "stdout": "{}",
+        "stderr": "",
+        "state_after": {
+          ".local/state/oso-code/runs/{repo}/auto-continuity.log": {
+            "journal_texts_in": "auto-continue: cap reached after 3 pushes without progress — allowing the stop"
+          },
+          ".local/state/oso-code/runs/{repo}/auto-continuity.pushes": {
+            "contains": [
+              "pushes=4"
+            ]
+          }
+        },
+        "events_appended": [
+          {
+            "event": "auto-continue-heads-unreadable",
+            "session": "test-session",
+            "command": "{present}",
+            "schema": 2,
+            "gate": "auto-continue.sh",
+            "hook_event": "Stop"
+          }
+        ]
+      }
+    },
+    {
+      "name": "autocontinue gate: the push re-anchors the run on position, journal and park, and forbids relaunching a delegation",
+      "argv": [],
+      "env": {},
+      "state_before": {
+        ".local/state/oso-code/{repo}.state": "auto=running\nauto_change=auto-continuity\nsession=test-session\n"
+      },
+      "cwd": "workspace",
+      "stdin": "{\"session_id\":\"test-session\",\"transcript_path\":\"{home}/.claude/projects/oso-code/test-session.jsonl\",\"cwd\":\"{cwd}\",\"hook_event_name\":\"Stop\",\"stop_hook_active\":false}",
+      "expect": {
+        "exit": 0,
+        "stdout": {
+          "contains": [
+            "oso/index NEXT:",
+            "active_slice",
+            "oso-state journal",
+            "park",
+            "do NOT relaunch it"
+          ]
+        }
+      }
+    }
+  ]
+}

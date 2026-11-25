@@ -15,7 +15,6 @@ import {
 } from "./routes.ts";
 
 export {
-  BUNDLE_DIRECTORY,
   GATE_BUNDLE,
   OPENCODE_PLUGIN_BUNDLE,
   OPENCODE_PLUGIN_ENTRY,

@@ -1,4 +1,4 @@
-export const HERMETIC_VERIFY_PATH = "/usr/bin:/bin:/usr/local/bin";
+const HERMETIC_VERIFY_PATH = "/usr/bin:/bin:/usr/local/bin";
 
 export function hermeticVerifyEnvironment(fixtureHome: string): NodeJS.ProcessEnv {
   return {

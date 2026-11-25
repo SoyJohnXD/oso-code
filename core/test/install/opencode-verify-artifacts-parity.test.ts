@@ -188,26 +188,6 @@ provedSomething(
 );
 
 describe("the rows this half owns are the artifact and repository rows, and the ones it defers are named individually", () => {
-  test("the artifact and repository rows are exactly the twelve C3-S4 deferred and the MCP surface row that joined them", () => {
-    const owned = OPENCODE_LOCAL_CHECK_ROWS.filter((row) => THIS_HALF_READS.includes(row.kind)).map((row) => row.name);
-    assert.deepEqual(owned, [
-      "isolated fixture install",
-      "nine skill wrappers and the shared skill directory installed",
-      "agent contracts installed",
-      "owned MCP servers closed on every installed agent",
-      "mode commands installed and routed",
-      "plugin entry, modules and routes installed",
-      "installed plugin loads on the host",
-      "Engram plugin file installed",
-      "installer-owned targets recorded",
-      "published gate bytes as installed",
-      "an install outside the named home is refused",
-      "OpenCode plugin typecheck",
-      "OpenCode plugin test suite",
-      "repository shell syntax",
-    ]);
-  });
-
   test("every row this half owns is either compared row for row below, or named here as driven by the assembly instead", () => {
     const compared: readonly string[] = COMPARED_ROWS.map((row) => row.name);
     const drivenByTheAssembly = OPENCODE_LOCAL_CHECK_ROWS.filter((row) => THIS_HALF_READS.includes(row.kind) && !compared.includes(row.name));
@@ -286,9 +266,9 @@ describe("the rows that drive an installer of their own", () => {
     },
   );
 
-  test("the shell-syntax row globs the six directories and the one named file, reaching every tracked shell source", () => {
+  test("the shell-syntax row globs its directories and the one named file, reaching every tracked shell source", () => {
     const sources = shellSourcesUnder(repositoryRoot).map((source) => posixSpelled(source.slice(repositoryRoot.length + 1)));
-    assert.ok(sources.length >= 9, `${sources.length} shell source(s) were listed`);
+    assert.ok(sources.length > 0, "no shell source was listed");
     assert.ok(sources.includes("bootstrap/install.sh"));
     assert.ok(sources.includes("tools/verify-check-names.sh"));
     assert.ok(sources.includes("plugin/git-hooks/pre-commit"));

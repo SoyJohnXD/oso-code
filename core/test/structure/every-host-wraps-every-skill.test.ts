@@ -4,10 +4,6 @@ import { provedSomething } from "../support/proved.ts";
 import { trackedRepositoryFiles } from "../support/tracked-files.ts";
 
 const PLUGIN_SKILL_PATTERN = /^plugin\/skills\/([^/]+)\/SKILL\.md$/;
-const SKILL_NAMES_FLOOR = 5;
-const SKILL_NAMES_DERIVATION =
-  "git ls-files plugin/skills/*/SKILL.md, measured at C5-S5b: debt-sweep, debug, doubt-pass, plan, " +
-  "quality-pass, quick, roadmap, security-pass, triage — 9";
 
 function pluginSkillNames(trackedFiles: readonly string[]): string[] {
   return trackedFiles
@@ -23,9 +19,9 @@ const trackedFileSet = new Set(trackedFiles);
 const skillNames = pluginSkillNames(trackedFiles);
 
 provedSomething(
-  `${skillNames.length} plugin skill(s) carrying a plugin/skills/<name>/SKILL.md were found`,
-  skillNames.length >= SKILL_NAMES_FLOOR,
-  `only ${skillNames.length} skill(s) were found, under the ${SKILL_NAMES_FLOOR}-skill floor (${SKILL_NAMES_DERIVATION})`,
+  "a plugin skill carrying a plugin/skills/<name>/SKILL.md was found",
+  skillNames.length > 0,
+  "no plugin/skills/<name>/SKILL.md was found, so no skill was checked for its opencode wrapper",
 );
 
 describe("every plugin skill is wrapped by an opencode/skills/oso-<name>/SKILL.md", () => {

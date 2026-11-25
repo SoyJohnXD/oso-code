@@ -3,7 +3,7 @@ import { describe, test } from "node:test";
 import { mismatchesRunning } from "./support/fixture-runner.ts";
 import { loadParityFixtures, PARITY_FIXTURE_DIRECTORY } from "./support/parity-fixture.ts";
 import { provedSomething } from "./support/proved.ts";
-import { provedSomeSubjectIsMeasurable, skipUnlessSpawnable, STATE_SUBJECTS } from "./support/state-sandbox.ts";
+import { provedTheStateSubjectIsMeasurable, skipUnlessSpawnable, STATE_SUBJECT } from "./support/state-sandbox.ts";
 
 const fixtures = loadParityFixtures();
 
@@ -13,18 +13,16 @@ provedSomething(
   `zero parity fixtures loaded from ${PARITY_FIXTURE_DIRECTORY}`,
 );
 
-provedSomeSubjectIsMeasurable();
+provedTheStateSubjectIsMeasurable();
 
-for (const subject of STATE_SUBJECTS) {
-  describe(
-    `${fixtures.length} parity fixtures, each quoting the assertion it was ported from, run against ${subject.name}`,
-    { skip: skipUnlessSpawnable(subject) },
-    () => {
-      for (const fixture of fixtures) {
-        test(fixture.name, () => {
-          assert.deepEqual(mismatchesRunning(subject, fixture), []);
-        });
-      }
-    },
-  );
-}
+describe(
+  `${fixtures.length} state CLI fixtures run against ${STATE_SUBJECT.name}`,
+  { skip: skipUnlessSpawnable(STATE_SUBJECT) },
+  () => {
+    for (const fixture of fixtures) {
+      test(fixture.name, () => {
+        assert.deepEqual(mismatchesRunning(STATE_SUBJECT, fixture), []);
+      });
+    }
+  },
+);

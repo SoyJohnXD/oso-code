@@ -2,7 +2,7 @@ import { VERIFIER_AGENT } from "../prose/routes.ts";
 import type { Role, RoleChoices, Tier } from "./profile.ts";
 
 export const OPENCODE_CONFIG_SCHEMA_URL = "https://opencode.ai/config.json";
-export const CONTEXT7_MCP_URL = "https://mcp.context7.com/mcp";
+const CONTEXT7_MCP_URL = "https://mcp.context7.com/mcp";
 
 export const OWNED_SKILL_MODES = ["oso-plan", "oso-quick", "oso-debug", "oso-roadmap"] as const;
 export const OWNED_SKILL_VERDICT = "deny";
@@ -419,7 +419,7 @@ function insertIfMissing(container: ConfigDocument, key: string, value: unknown)
   container[key] = value;
 }
 
-export function declaresAnything(value: unknown): boolean {
+function declaresAnything(value: unknown): boolean {
   if (value === undefined || value === null || value === false || value === 0 || value === "") return false;
   if (Array.isArray(value)) return value.length > 0;
   if (isPlainObject(value)) return Object.keys(value).length > 0;
