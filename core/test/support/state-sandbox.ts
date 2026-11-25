@@ -14,6 +14,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { provedSomething } from "./proved.ts";
+import { skipUnlessKernelRunsScriptFixtures } from "./win32-skip-guards.ts";
 
 export const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 
@@ -22,10 +23,17 @@ export type StateSubject = {
   readonly command: readonly string[];
 };
 
-export const STATE_SUBJECT: StateSubject = {
+const STATE_EXECUTABLE: StateSubject = {
   name: "plugin/bin/oso-state",
   command: [path.join(repositoryRoot, "plugin", "bin", "oso-state")],
 };
+
+export const STATE_BUNDLE: StateSubject = {
+  name: "node plugin/dist/oso-state.js",
+  command: ["node", path.join(repositoryRoot, "plugin", "dist", "oso-state.js")],
+};
+
+export const STATE_SUBJECT: StateSubject = skipUnlessKernelRunsScriptFixtures() === false ? STATE_EXECUTABLE : STATE_BUNDLE;
 
 export type SeededEntry =
   | string
