@@ -26,7 +26,7 @@ Plan execution can be sequential in the main checkout or parallel by wave in iso
 | `docs/` | Blueprint, OpenCode parity record, and Windows and OpenCode purge guides. |
 | `tools/` | Repository checks and support scripts. |
 
-Generated runtime files are committed. Edit their source under `core/src/`, then run `npm run build`.
+Generated runtime files are committed. Edit their source under `core/src/`, then run `npm run build`. How changes are tested, how the repository grows and how it is managed: [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Install
 
