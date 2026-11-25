@@ -2,7 +2,6 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, test } from "node:test";
-import { isPlanRailFailure } from "../../src/gates/planrail.ts";
 import { PlanFailure, runCapturePlan } from "../../src/state/plan.ts";
 import { sha256Hex } from "../../src/state/store.ts";
 import { withHookEnvironment } from "../support/gate-fixture.ts";
@@ -107,8 +106,7 @@ describe(
       withStateSandbox("workspace", (sandbox) => {
         assert.throws(
           () => captured(sandbox, SLICE_TWO_NAMES_NO_CHECK),
-          (thrown: unknown) =>
-            isPlanRailFailure(thrown) && thrown instanceof PlanFailure && thrown.message === THE_REFUSAL_SLICE_TWO_EARNS,
+          (thrown: unknown) => thrown instanceof PlanFailure && thrown.message === THE_REFUSAL_SLICE_TWO_EARNS,
         );
       });
     });

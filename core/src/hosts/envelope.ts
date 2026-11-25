@@ -42,8 +42,6 @@ export type PreToolUseVerdict = Extract<GateVerdict, { kind: "deny" | "allow" | 
 export type SessionStartVerdict = Extract<GateVerdict, { kind: "allow" | "context" | "gateError" }>;
 export type NoVerdictVerdict = Extract<GateVerdict, { kind: "noVerdict" | "gateError" }>;
 export type StopVerdict = Extract<GateVerdict, { kind: "allow" | "deny" | "push" }>;
-export type UserPromptVerdict = Extract<GateVerdict, { kind: "allow" | "deny" | "context" }>;
-export type SubagentStopVerdict = Extract<GateVerdict, { kind: "noVerdict" }>;
 
 export type GateOutcome<V extends GateVerdict = PreToolUseVerdict> = Readonly<{
   verdict: V;
@@ -167,11 +165,11 @@ function asHookFieldValue(value: string): string {
   return asCommandSubstitutionCaptures(withoutCarriageReturns(asCommandSubstitutionCaptures(value)));
 }
 
-export function asCommandSubstitutionCaptures(text: string): string {
+function asCommandSubstitutionCaptures(text: string): string {
   return text.replaceAll("\0", "").replace(/\n+$/, "");
 }
 
-export function escapedField(hookText: string, field: string): string {
+function escapedField(hookText: string, field: string): string {
   const pattern = new RegExp(`"${field}"${JSON_SPACE}*:${JSON_SPACE}*"((?:[^"\\\\]|\\\\[\\s\\S])*)"`);
   return pattern.exec(asCommandSubstitutionCaptures(hookText))?.[1] ?? "";
 }
@@ -184,7 +182,7 @@ const NAMED_ESCAPES: Readonly<Record<string, string>> = {
   f: "\f",
 };
 
-export function unescapedJson(escaped: string): string {
+function unescapedJson(escaped: string): string {
   let decoded = "";
   let rest = escaped;
   while (rest !== "") {

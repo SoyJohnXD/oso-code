@@ -396,7 +396,6 @@ var OK_PREFIX = "ok:   ";
 var FAIL_PREFIX = "FAIL: ";
 var NOTE_PREFIX = "note: ";
 var SKIP_PREFIX = "skip: ";
-var UNVERIFIED_PREFIX = "unverified: ";
 var DETAIL_INDENT = "      ";
 var SUMMARY_RULE = "----";
 var VerifyReport = class {
@@ -418,9 +417,6 @@ var VerifyReport = class {
   }
   skip(text) {
     this.lines.push(`${SKIP_PREFIX}${text}`);
-  }
-  unverified(text) {
-    this.lines.push(`${UNVERIFIED_PREFIX}${text}`);
   }
   section(text) {
     this.lines.push(text);

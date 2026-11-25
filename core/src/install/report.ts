@@ -2,7 +2,6 @@ const OK_PREFIX = "ok:   ";
 const FAIL_PREFIX = "FAIL: ";
 const NOTE_PREFIX = "note: ";
 const SKIP_PREFIX = "skip: ";
-const UNVERIFIED_PREFIX = "unverified: ";
 const DETAIL_INDENT = "      ";
 const SUMMARY_RULE = "----";
 
@@ -28,10 +27,6 @@ export class VerifyReport {
 
   skip(text: string): void {
     this.lines.push(`${SKIP_PREFIX}${text}`);
-  }
-
-  unverified(text: string): void {
-    this.lines.push(`${UNVERIFIED_PREFIX}${text}`);
   }
 
   section(text: string): void {

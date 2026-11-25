@@ -24,9 +24,9 @@ import {
 } from "./report.ts";
 import { isReadableRegularFile, isSymlink, withOwnerOnlyUmask } from "../state/store.ts";
 
-export const OPENCODE_PURGE_BACKUP_FORMAT = "oso-code-opencode-purge-v1";
+const OPENCODE_PURGE_BACKUP_FORMAT = "oso-code-opencode-purge-v1";
 export const PROJECT_CONFIGS_KEY = "OSO_OPENCODE_PROJECT_CONFIGS";
-export const REQUIRED_PROJECT_CONFIG_COUNT = 3;
+const REQUIRED_PROJECT_CONFIG_COUNT = 3;
 
 const GENTLE_AI_LABELS = ["gentle-ai-home", "gentle-ai-bin"] as const;
 const UNSAFE_PATH_SEGMENTS = ["/../", "/./"] as const;
@@ -61,7 +61,7 @@ export function purgeBackupParentOf(homeDirectory: string): string {
   return path.join(homeDirectory, ".local", "state", "oso-code", "purge-backups");
 }
 
-export function customizedHomeRefusal(homeDirectory: string, environment: NodeJS.ProcessEnv): string | undefined {
+function customizedHomeRefusal(homeDirectory: string, environment: NodeJS.ProcessEnv): string | undefined {
   const rows = [
     { key: "XDG_CONFIG_HOME", expected: path.join(homeDirectory, ".config"), named: "config home" },
     { key: "XDG_STATE_HOME", expected: path.join(homeDirectory, ".local", "state"), named: "state home" },
@@ -72,7 +72,7 @@ export function customizedHomeRefusal(homeDirectory: string, environment: NodeJS
   return `${customized.key} is not the default (${customized.expected}); a customized opencode ${customized.named} is missed by this wipe`;
 }
 
-export function unsafeTargetRefusal(homeDirectory: string, targets: readonly PurgeTarget[]): string | undefined {
+function unsafeTargetRefusal(homeDirectory: string, targets: readonly PurgeTarget[]): string | undefined {
   const homePhysical = physicalPathOf(homeDirectory);
   if (homePhysical === undefined) return `HOME does not resolve to a physical path: ${homeDirectory}`;
   if (homePhysical === path.parse(homePhysical).root) return `refusing to operate with HOME=${homeDirectory}`;
@@ -88,7 +88,7 @@ export function unsafeTargetRefusal(homeDirectory: string, targets: readonly Pur
   return undefined;
 }
 
-export function backupOverlapRefusal(backupParent: string, targets: readonly PurgeTarget[]): string | undefined {
+function backupOverlapRefusal(backupParent: string, targets: readonly PurgeTarget[]): string | undefined {
   for (const { target } of targets) {
     if (backupParent === target || isBelow(backupParent, target)) return `backup root would be inside purge target: ${target}`;
     if (target === backupParent || isBelow(target, backupParent)) return `purge target would contain existing backups: ${target}`;
@@ -96,7 +96,7 @@ export function backupOverlapRefusal(backupParent: string, targets: readonly Pur
   return undefined;
 }
 
-export function projectConfigsRefusal(environment: NodeJS.ProcessEnv, targets: readonly PurgeTarget[]): string | undefined {
+function projectConfigsRefusal(environment: NodeJS.ProcessEnv, targets: readonly PurgeTarget[]): string | undefined {
   const declared = projectConfigsIn(environment);
   if (declared.length === 0) {
     return `${PROJECT_CONFIGS_KEY} is required: exactly ${REQUIRED_PROJECT_CONFIG_COUNT} absolute project-level opencode.json paths, space-separated`;
@@ -190,7 +190,7 @@ function removalEntry(label: PurgeLabel, target: string): WiringEntry {
   return existsAtAll(target) ? wiringFail(label, `purge target was not removed: ${target}`) : wiringOk(label, `removed ${target}`);
 }
 
-export function restoreOpenCodePurge(backupDirectory: string, homeDirectory: string): CommandOutcome {
+function restoreOpenCodePurge(backupDirectory: string, homeDirectory: string): CommandOutcome {
   const readable = readablePurgeBackup(backupDirectory, homeDirectory);
   if (readable.kind === "unusable") return fatalOutcome("purge", "opencode", "cannot restore from this backup", readable.message);
 

@@ -92,7 +92,7 @@ export function listMarkers(commonDir: string): LiveMarker[] {
   return markers;
 }
 
-export function isLive(marker: LiveMarker): boolean {
+function isLive(marker: LiveMarker): boolean {
   if (marker.pid === process.pid) {
     return true;
   }

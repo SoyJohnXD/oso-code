@@ -27,6 +27,9 @@ jobs:
         run: npm ci --no-audit --no-fund
       - name: Typecheck the core workspace
         run: npm run typecheck
+      - name: Dead code and unused exports (ubuntu only)
+        if: runner.os == 'Linux'
+        run: npm run fallow
       - name: Core unit tests
         env:
           OSO_TEST_BUDGET_SECONDS: ${{ matrix.test-budget-seconds }}

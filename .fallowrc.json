@@ -3,8 +3,48 @@
   "entry": [
     "core/src/bin/gate.ts",
     "core/src/bin/oso-state.ts",
+    "core/src/bin/oso.ts",
     "core/src/bin/precommit.ts",
     "core/src/index.ts",
-    "opencode/plugin/oso-code.ts"
+    "core/test/**/*.test.ts",
+    "opencode/plugin/oso-code.ts",
+    "opencode/plugin/oso/**/*.test.ts",
+    "tools/*"
+  ],
+  "ignorePatterns": [
+    "bootstrap/package.json",
+    "plugin/bin/package.json",
+    "tools/package.json"
+  ],
+  "ignoreDependencies": [
+    "esbuild"
+  ],
+  "dynamicallyLoaded": [
+    "core/test/certify/support/host-spike-plugin.mjs",
+    "core/test/certify/support/mcp-stub.mjs"
+  ],
+  "ignoreExports": [
+    {
+      "file": "core/src/routes/render.ts",
+      "exports": [
+        "GATE_BUNDLE",
+        "OPENCODE_PLUGIN_BUNDLE",
+        "OPENCODE_PLUGIN_ENTRY",
+        "PRECOMMIT_BUNDLE"
+      ]
+    },
+    {
+      "file": "core/src/routes/routes.ts",
+      "exports": [
+        "BOOTSTRAP_BUNDLE",
+        "BOOTSTRAP_DIRECTORY",
+        "MODULE_MANIFEST",
+        "OPENCODE_PLUGIN_ENTRY",
+        "PLUGIN_BINARY_DIRECTORY",
+        "PLUGIN_BUNDLE_DIRECTORY",
+        "PLUGIN_STATE_BUNDLE",
+        "PLUGIN_STATE_EXECUTABLE"
+      ]
+    }
   ]
 }
