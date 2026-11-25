@@ -18,7 +18,7 @@ OpenCode 1 record: every suite in this table has been deleted; the rows are what
 
 ## Standing security residual
 
-Two lexer bypasses at the production-deploy gate are ported record for record rather than closed: a command-string-carrying wrapper (`script -qc '…'`, `ssh host '…'`, `tmux new-session -d '…'`) whose payload lands as one quoted token no basename comparison matches, and an `xargs` replace-string splitting the line at `{`, so `echo --prod | xargs -I{} vercel {}` passes allowed and uncounted where `echo --prod | xargs vercel` is denied. Both holes are pinned as fixtures under `core/test/fixtures/gates/` and asserted in `core/test/gates/parity.test.ts` and `core/test/port/lexer.test.ts` rather than fixed; closing either is a security change and stays the operator's.
+Two lexer bypasses at the production-deploy gate are ported record for record rather than closed: a command-string-carrying wrapper (`script -qc '…'`, `ssh host '…'`, `tmux new-session -d '…'`) whose payload lands as one quoted token no basename comparison matches, and an `xargs` replace-string splitting the line at `{`, so `echo --prod | xargs -I{} vercel {}` passes allowed and uncounted where `echo --prod | xargs vercel` is denied. Both holes are pinned as fixtures under `core/test/fixtures/gates/` and asserted in `core/test/gates/parity.test.ts` and `core/test/shell/lexer.test.ts` rather than fixed; closing either is a security change and stays the operator's.
 
 ## What was and was not driven
 
@@ -38,7 +38,7 @@ Three readings taken against the OpenCode 1.x binary this machine carried before
   The captured line — `! permission requested: external_directory (…/wt2/*); auto-rejecting` — is that template byte for byte. `Hj` is the run's own permission flag, `j.auto||j.yolo||j["dangerously-skip-permissions"]` at byte 96268129: raised, every prompt is answered `once` and nothing is printed; unraised, every prompt prints the line above and is answered `reject`. `WORKTREE_PERMISSION_AUTO_REJECTED_PATTERN` in `core/test/certify/support/wave-isolation.ts` and the wave-runner smoke's `host-refused-the-worktree` outcome therefore both still match on this host.
 - **1.x record: one headless turn reached all three harness paths before the posture rows existed.** Driven through the 1.x host's bash tool on a scratch project, a single turn read an installed skill wrapper, ran `oso-state show` and wrote into a worktree under `~/.local/share/opencode/worktree/`, and the child stream carried no `permission requested` line at all — with `permission.external_directory` absent from the rendered config. The shell tool's own description says why: an external *workdir* needs `external_directory` approval, while "command-argument path warnings are advisory only".
 
-## What the host's permission schema makes of `edit`, measured at C0 on the host posture close
+## What the host's permission schema makes of `edit`
 
 Taken against the OpenCode 1.x binary this machine carried before the pin moved to 2.2.6 — the same instrument rule as the prompt-free posture readings above: `rg -ob --text` for every byte offset below, `dd` for the bytes around them, and `opencode debug config` / `opencode debug agent` against a fixture install whose `HOME`, `USERPROFILE`, `TMPDIR` and every `XDG_*` were pinned away from this machine's own.
 
@@ -55,7 +55,7 @@ Taken against the OpenCode 1.x binary this machine carried before the pin moved 
 - **1.x record: `permission.edit` joins the installer-owned permission containers, with the refusal its three siblings already carry.** `mergeOpenCodeConfig` leaf-merges it the way it merges `skill`, `task` and `external_directory`, so an operator's own rows inside it survive and are counted as preserved, and an operator holding `permission.edit` as a scalar meets the same `holds a non-object "edit"; fix it and re-run` refusal those three have always raised for a scalar. That refusal is loud and names the key; it is recorded here rather than smoothed over.
 - **A narrower operator posture is read as information and no longer as damage.** `openCodeConfigStatus` reads a harness grant the operator dropped, dropped whole, put back to a prompt, or replaced by a sub-path as `narrowed by the operator`. Only a grant wider than the harness's own, or an owned row carrying a shape none of `allow`, `ask` and `deny` has, still reads `malformed`.
 
-## What the corrected reach guard reads, and the residual it now prints, measured at C0 on the host posture close
+## What the corrected reach guard reads, and the residual it now prints
 
 OpenCode 1.x record: every bullet of this section was measured on the 1.x host and was not re-measured on 2.2.6.
 
@@ -69,7 +69,7 @@ OpenCode 1.x record: every bullet of this section was measured on the 1.x host a
 
 1.x record: `permission.bash` on the 1.x host reads `{"*": "allow"}`. It is the operator's own key, preserved by every install and never written by the harness — `mergeOpenCodeConfig` owned `permission.skill`, `permission.task`, `permission.external_directory`, `permission.edit` and the five verdicts in `OWNED_PERMISSION_VALUES`, and records every other permission key as preserved. Deleting that key would not close the grant: the host's own default at byte 97099175 opens with `"*":"allow"`, an action-`*` resource-`*` rule that covers `bash` on its own, so bash-allow is the host's default and the operator's key at once and only the first of the two is anybody's to remove here. While that grant stands, `external_directory` is not a containment boundary for bash: the shell tool's own description already says an external *workdir* needs approval while command-argument paths are advisory only, so a bash command may read and write outside any granted directory without raising an `external_directory` prompt at all. This is a statement of fact about the operator's configuration. The harness neither changes it nor judges it, and `oso profile show` prints what remains a prompt.
 
-## What the rendered agent blocks close of the MCP surface, measured at C0
+## What the rendered agent blocks close of the MCP surface
 
 - **1.x record: oso agents' MCP surface: closed to the harness's three servers; operator-declared servers reachable until a render-time closure lands.** `oso verify --host opencode`'s `owned MCP servers closed on every installed agent` row asserts `context7_*`, `engram_*` and `fallow_*` against every rendered block, and prints every other declared server beside the agent count it stays reachable on rather than failing the operator's own configuration. The gap is mechanical: a deny-list cannot name a server it does not know, and install-time edits collide with the byte-assertion.
 

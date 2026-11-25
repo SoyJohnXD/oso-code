@@ -15,13 +15,8 @@ const RETIRED_SCRIPT_NAMES = [
   "reanchor-after-compact",
   "warn-stale-state",
 ];
-const RETIRED_SCRIPT_PATHS = RETIRED_SCRIPT_NAMES.map((name) => `${HOOKS_DIRECTORY}${name}.sh`);
 const RETIRED_CITATION = new RegExp(`${HOOKS_DIRECTORY}(${RETIRED_SCRIPT_NAMES.join("|")})\\.sh`);
 const SHIPPED_PREFIXES = ["plugin/", "opencode/", "core/src/", "bootstrap/", ".github/"];
-
-function retiredScriptsStanding(files: readonly string[]): string[] {
-  return files.filter((file) => RETIRED_SCRIPT_PATHS.includes(file));
-}
 
 function strayHooksDirectoryFiles(files: readonly string[]): string[] {
   return files.filter((file) => file.startsWith(HOOKS_DIRECTORY) && file !== HOOKS_MANIFEST);
@@ -41,8 +36,7 @@ provedSomething(
 );
 
 describe("the retired bash hook scripts are gone from the tree", () => {
-  test("none of the retired scripts is tracked and the hooks directory holds only the manifest", () => {
-    assert.deepEqual(retiredScriptsStanding(trackedFiles), []);
+  test("the hooks directory holds only the manifest", () => {
     assert.deepEqual(strayHooksDirectoryFiles(trackedFiles), []);
   });
 
@@ -55,7 +49,6 @@ describe("the retired bash hook scripts are gone from the tree", () => {
 describe("the scanners flag what they exist to flag", () => {
   test("a re-added script is flagged and the manifest alone passes", () => {
     const files = [HOOKS_MANIFEST, `${HOOKS_DIRECTORY}lib.sh`];
-    assert.deepEqual(retiredScriptsStanding(files), [`${HOOKS_DIRECTORY}lib.sh`]);
     assert.deepEqual(strayHooksDirectoryFiles(files), [`${HOOKS_DIRECTORY}lib.sh`]);
     assert.deepEqual(strayHooksDirectoryFiles([HOOKS_MANIFEST]), []);
   });
