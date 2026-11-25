@@ -35,7 +35,15 @@ Judge skills — `debt-sweep`, `quality-pass`, `security-pass`, `doubt-pass`, `t
 
 ## Context budget
 
-Each host's always-loaded global guidance stays within 2k tokens; behavior lives in on-demand skills.
+What a session loads before the first prompt is three buckets, and behavior lives in on-demand skills:
+
+| Bucket | Source | Budget (tokens) | Now |
+|---|---|---|---|
+| Global guidance | `bootstrap/claude-global.md`, `bootstrap/opencode-global.md` | 2000 per host | 615 Claude, 732 OpenCode |
+| Output style | `plugin/output-styles/oso.md` (Claude) | 1600 | 1431 |
+| Skill and agent descriptions | `name` and `description` frontmatter of `plugin/skills/*`, `plugin/agents/*` (Claude) and `opencode/skills/*`, `opencode/agents/*` (OpenCode) | 1200 Claude, 1300 OpenCode | 1114 Claude, 1238 OpenCode |
+
+Tokens are an estimate, bytes divided by 4 and rounded up. SessionStart hook output is conditional, so it is excluded. Every skill description is counted, including those marked `disable-model-invocation`, so the descriptions row is an upper bound. `npm test` enforces the budgets through `core/test/structure/always-loaded-budget.test.ts`; raising one needs the reason written in the commit message.
 
 ## Bootstrap responsibilities
 
