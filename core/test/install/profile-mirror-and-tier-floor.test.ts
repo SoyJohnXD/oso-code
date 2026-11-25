@@ -226,7 +226,7 @@ describe("remainingPromptsOf reads the prompts a rendered config still asks, so 
     ]);
   });
 
-  test("the two reads C0-D5(a) stopped granting are listed as the degrade they are, and an operator's own allow over either one takes it off the list", () => {
+  test("the two reads the profile stopped granting are listed as the degrade they are, and an operator's own allow over either one takes it off the list", () => {
     const allowedByTheOperator = (pattern: string) => ({ permission: { doom_loop: "allow", external_directory: { [pattern]: "allow" } } });
     assert.deepEqual(remainingPromptsOf(allowedByTheOperator("~/.config/opencode/**")), [HARNESS_STATE_ROOT]);
     assert.deepEqual(remainingPromptsOf(allowedByTheOperator("~/.local/state/oso-code/**")), [CONFIG_HOME_BEYOND_SKILL]);
