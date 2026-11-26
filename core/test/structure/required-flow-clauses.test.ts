@@ -73,6 +73,13 @@ const ROWS: readonly Row[] = [
     ],
   },
   {
+    contract: "the verifier contract carries the batch shape and the applier reports its risk surface",
+    targets: [
+      { files: VERIFIER_CONTRACTS, tokens: ["slice: <id>", "token: <name>", "risk: high <reason>", "up to 3 slice packets"] },
+      { files: contractFiles("oso-applier"), tokens: ["risk-surface:"] },
+    ],
+  },
+  {
     contract: "every launch carries the model the profile names and the milestone names it",
     targets: [
       { files: FLOWS_THAT_LAUNCH_DELEGATES, tokens: ["the model the profile names for its role", "named in the Launching milestone"] },
