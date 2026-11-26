@@ -1036,17 +1036,19 @@ function isVerifierRecord(entry) {
 }
 function armingsOf(entries) {
   const everyArming = [];
+  const armMarkers = [];
   const newestArmingOfSlice = /* @__PURE__ */ new Map();
   for (const entry of entries) {
     if (isMarkerOf("arm", entry)) {
       const arming = [];
       everyArming.push(arming);
+      armMarkers.push(entry);
       newestArmingOfSlice.set(entry.slice, arming);
       continue;
     }
     if (entry.slice !== null) newestArmingOfSlice.get(entry.slice)?.push(entry);
   }
-  return { everyArming, newestArmingOfSlice };
+  return { everyArming, armMarkers, newestArmingOfSlice };
 }
 function appendEntry(verdictsFile, session, entryOf) {
   try {

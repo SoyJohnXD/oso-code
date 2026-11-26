@@ -125,22 +125,25 @@ export function isVerifierRecord(entry: VerdictLogEntry): entry is VerdictRecord
 
 type Armings = Readonly<{
   everyArming: VerdictLogEntry[][];
+  armMarkers: Marker[];
   newestArmingOfSlice: ReadonlyMap<string, VerdictLogEntry[]>;
 }>;
 
 export function armingsOf(entries: readonly VerdictLogEntry[]): Armings {
   const everyArming: VerdictLogEntry[][] = [];
+  const armMarkers: Marker[] = [];
   const newestArmingOfSlice = new Map<string, VerdictLogEntry[]>();
   for (const entry of entries) {
     if (isMarkerOf("arm", entry)) {
       const arming: VerdictLogEntry[] = [];
       everyArming.push(arming);
+      armMarkers.push(entry);
       newestArmingOfSlice.set(entry.slice, arming);
       continue;
     }
     if (entry.slice !== null) newestArmingOfSlice.get(entry.slice)?.push(entry);
   }
-  return { everyArming, newestArmingOfSlice };
+  return { everyArming, armMarkers, newestArmingOfSlice };
 }
 
 export function appendEntry(verdictsFile: string, session: string, entryOf: () => object): boolean {

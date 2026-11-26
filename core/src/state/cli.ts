@@ -24,7 +24,7 @@ import {
   type WaveSlice,
   wavesFileFor,
 } from "../verdict/wave.ts";
-import { type GreensRead, renderReportTable, unreceiptedGreensIn, verdictMetrics } from "../verdict/report.ts";
+import { type GreensRead, integrationRedsIn, renderReportTable, unreceiptedGreensIn, verdictMetrics } from "../verdict/report.ts";
 import * as knownKeys from "./known-keys.ts";
 import * as plan from "./plan.ts";
 import * as store from "./store.ts";
@@ -353,7 +353,7 @@ function readGreens(): GreensRead {
   const read = store.readStateFile(eventsLog);
   if (read.kind === "absent") return { kind: "omitted", reason: `no events log at ${eventsLog}` };
   if (read.kind === "unreadable") return { kind: "omitted", reason: `cannot read ${eventsLog}: ${read.cause}` };
-  return { kind: "read", greens: unreceiptedGreensIn(read.content) };
+  return { kind: "read", greens: unreceiptedGreensIn(read.content), integrationReds: integrationRedsIn(read.content) };
 }
 
 function runWatch(sessionId: string, remaining: readonly string[]): number {
