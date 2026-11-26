@@ -1027,10 +1027,11 @@ function logEntryOf(line) {
   return verdictRecordOf(parsed);
 }
 function markerOf(fields) {
-  const { slice, session, change, time } = fields;
+  const { slice, session, change, time, wave } = fields;
   const kind = MARKER_KINDS.find((value) => value === fields["kind"]);
   if (kind === void 0 || !isText(slice) || !isText(session) || !isTextOrNull(change) || !isText(time)) return void 0;
-  return { kind, slice, session, change, time };
+  if (wave !== void 0 && !isText(wave)) return void 0;
+  return { kind, slice, session, change, time, ...wave === void 0 ? {} : { wave } };
 }
 function verdictRecordOf(fields) {
   const { time, host, session, change, slice, attempt, role, model, verdict, verdict_shape, escalated } = fields;
