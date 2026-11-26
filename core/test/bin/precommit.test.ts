@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
-import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import path from "node:path";
+import { repositoryIdentityFor, sha256Hex } from "../../src/state/store.ts";
 import { provedSomething } from "../support/proved.ts";
 import {
   repositoryRoot,
@@ -126,7 +126,7 @@ describe("the git pre-commit hook's own boundary", { skip: skipUnlessSpawnable(P
       return withStateSandbox("workspace", (sandbox) => {
         const repository = sandbox.seedGitRepository("proj");
         spawnSync("git", ["-C", repository, "checkout", "-q", "-b", branch]);
-        const key = createHash("sha256").update(path.join(repository, ".git")).digest("hex");
+        const key = sha256Hex(repositoryIdentityFor(repository));
         sandbox.seed({ [`.local/state/oso-code/${key}.state`]: state });
         return sandbox.run(PRE_COMMIT_HOOK, [], { env: HOST_SESSION, cwd: repository });
       });
@@ -150,7 +150,7 @@ describe("the git pre-commit hook's own boundary", { skip: skipUnlessSpawnable(P
       const run = withStateSandbox("workspace", (sandbox) => {
         const repository = sandbox.seedGitRepository("proj");
         spawnSync("git", ["-C", repository, "checkout", "-q", "--detach"]);
-        const key = createHash("sha256").update(path.join(repository, ".git")).digest("hex");
+        const key = sha256Hex(repositoryIdentityFor(repository));
         sandbox.seed({ [`.local/state/oso-code/${key}.state`]: NAMED_WINDOW });
         return sandbox.run(PRE_COMMIT_HOOK, [], { env: HOST_SESSION, cwd: repository });
       });

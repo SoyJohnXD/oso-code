@@ -1,10 +1,9 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { createHash } from "node:crypto";
-import path from "node:path";
 import { describe, test } from "node:test";
 import { runGate } from "../../src/gates/dispatch.ts";
 import { spawnedEnvelope } from "../../src/hosts/spawned.ts";
+import { repositoryIdentityFor, sha256Hex } from "../../src/state/store.ts";
 import { withHookEnvironment } from "../support/gate-fixture.ts";
 import { withStateSandbox } from "../support/state-sandbox.ts";
 
@@ -15,7 +14,7 @@ function preToolUseOnBranch(branch: string, commandLine: (repository: string) =>
   return withStateSandbox("workspace", (sandbox) => {
     const repository = sandbox.seedGitRepository("proj");
     spawnSync("git", ["-C", repository, "checkout", "-q", "-b", branch]);
-    const key = createHash("sha256").update(path.join(repository, ".git")).digest("hex");
+    const key = sha256Hex(repositoryIdentityFor(repository));
     sandbox.seed({ [`.local/state/oso-code/${key}.state`]: NAMED_WINDOW });
     const payload = JSON.stringify({
       session_id: SESSION,
