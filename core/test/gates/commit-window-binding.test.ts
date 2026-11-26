@@ -30,12 +30,12 @@ function preToolUseOnBranch(branch: string, commandLine: (repository: string) =>
 
 describe("the PreToolUse layer binds a named window even when the git invocation redirects the repository", () => {
   test("a commit through --git-dir from another slice's branch is refused", () => {
-    const kind = preToolUseOnBranch("oso/alpha/s2", (repository) => `git --git-dir=${repository}/.git commit -m x`);
+    const kind = preToolUseOnBranch("oso/alpha/s2", (repository) => `git --git-dir='${repository}/.git' commit -m x`);
     assert.equal(kind, "deny");
   });
 
   test("a commit through -C from the named slice's branch goes through", () => {
-    const kind = preToolUseOnBranch("oso/alpha/s1", (repository) => `git -C ${repository} commit -m x`);
+    const kind = preToolUseOnBranch("oso/alpha/s1", (repository) => `git -C '${repository}' commit -m x`);
     assert.notEqual(kind, "deny");
   });
 
