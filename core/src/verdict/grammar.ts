@@ -38,18 +38,27 @@ export function readVerdictShape(text: string): VerdictReading {
   return verdict === undefined ? { verdict: "none", verdict_shape: "malformed" } : { verdict, verdict_shape: "valid" };
 }
 
-export interface SliceRisk {
+export interface BlockRisk {
   level: "high";
   reason: string;
 }
 
 export type SliceBlockReading =
-  | { slice: string; verdict: VerdictValue; verdict_shape: "valid"; risk?: SliceRisk }
+  | { slice: string; verdict: VerdictValue; verdict_shape: "valid"; risk?: BlockRisk }
   | { slice?: string; verdict: "none"; verdict_shape: "malformed" };
 
 const SLICE_LINE = /^\s*slice\s*:\s*(.*?)\s*$/i;
 const SLICE_ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 const RISK_HIGH_LINE = /^\s*risk\s*:\s*high(?:\s+(.*?))?\s*$/i;
+
+const TOKEN_LINE = /^\s*token\s*:\s*([A-Za-z0-9][A-Za-z0-9._-]*)\s*$/i;
+
+export function readLaunchToken(text: string): string | undefined {
+  return text
+    .split(/\r?\n/)
+    .map((line) => line.match(TOKEN_LINE)?.[1])
+    .find((token) => token !== undefined);
+}
 
 export function readSliceBlocks(text: string): SliceBlockReading[] {
   const readings: SliceBlockReading[] = [];

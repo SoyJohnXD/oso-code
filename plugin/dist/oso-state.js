@@ -1374,7 +1374,8 @@ var VERIFIER_ROLE = "verifier";
 var TELEMETRY_WRITE_FAILED = "telemetry-write-failed";
 var VERIFY_GREEN_UNRECEIPTED = "verify-green-unreceipted";
 var SLICE_MARKS = ["diagnosed", "escalated", "empty-result"];
-var MARKER_KINDS = ["arm", ...SLICE_MARKS];
+var RISK_HIGH_DISCARDED = "risk-high";
+var MARKER_KINDS = ["arm", RISK_HIGH_DISCARDED, ...SLICE_MARKS];
 function verdictsFileFor(stateFile) {
   return path4.join(runsDirectoryOf(stateFile), "verdicts.jsonl");
 }
@@ -1456,13 +1457,14 @@ function markerOf(fields) {
   return { kind, slice, session, change, time, ...wave === void 0 ? {} : { wave } };
 }
 function verdictRecordOf(fields) {
-  const { time, host, session, change, slice, attempt, role, model, verdict, verdict_shape, escalated } = fields;
+  const { time, host, session, change, slice, attempt, role, model, verdict, verdict_shape, escalated, batch } = fields;
   if (!isText(time) || !isText(session) || !isTextOrNull(change) || !isTextOrNull(slice) || !isText(role)) return void 0;
   if (!isHostName(host) || typeof attempt !== "number") return void 0;
   if (!isTextOrNull(model) || typeof escalated !== "boolean") return void 0;
   const recorded = RECORDED_VERDICTS.find((value) => value === verdict);
   const shape = VERDICT_SHAPES.find((value) => value === verdict_shape);
   if (recorded === void 0 || shape === void 0) return void 0;
+  if (batch !== void 0 && typeof batch !== "number") return void 0;
   return {
     time,
     host,
@@ -1474,7 +1476,8 @@ function verdictRecordOf(fields) {
     model,
     verdict: recorded,
     verdict_shape: shape,
-    escalated
+    escalated,
+    ...batch === void 0 ? {} : { batch }
   };
 }
 var HOST_NAMES = { claude: true, opencode: true };
