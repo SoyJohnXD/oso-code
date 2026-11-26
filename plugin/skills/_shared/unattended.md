@@ -46,7 +46,7 @@ AUTO's CEILING is how far a run reaches without another person: this machine and
 
 A ceiling field updates on the operator's natural-language request, applied with `mem_update` — merge, never overwrite — and confirmed.
 
-Choosing AUTO at §4's execution-disposition question
+## Choosing AUTO at §4's execution-disposition question
 
 NORMAL is the default and the recommendation: AUTO buys nothing for an operator who is sitting here. Never re-ask what the ledger already answers — an operator who said auto earlier has answered this question, and it is skipped with their answer recorded.
 
