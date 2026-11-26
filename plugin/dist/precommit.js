@@ -345,29 +345,39 @@ function commitGateArmedFor(stateContent, session) {
 var WAVE_WINDOW_PREFIX = "wave-";
 var SLICE_BRANCH_FAMILY = "oso";
 var SLICE_BRANCH_SEGMENTS = 3;
+var DETACHED_HEAD_EXIT = 1;
 function windowSliceOf(stateContent) {
   if (!verifyIsGreen(stateContent)) return void 0;
   if (!stateValue(stateContent, "active_slice").startsWith(WAVE_WINDOW_PREFIX)) return void 0;
   const named = stateValue(stateContent, "green_slice");
   return named === "" ? void 0 : named;
 }
-function otherSliceBranchRefusal(stateContent, branch) {
+function otherSliceBranchRefusal(stateContent, readBranch) {
   const window = windowSliceOf(stateContent);
-  if (window === void 0 || branch === void 0) return void 0;
-  const segments = branch.split("/");
+  if (window === void 0) return void 0;
+  const reading = readBranch();
+  if (reading.kind === "detached") return void 0;
+  if (reading.kind === "failed") {
+    return `oso-code: the green window names slice ${window}, but the committing branch could not be read (${reading.cause}), so the commit is refused.`;
+  }
+  const segments = reading.name.split("/");
   if (segments.length !== SLICE_BRANCH_SEGMENTS || segments[0] !== SLICE_BRANCH_FAMILY) return void 0;
   if (segments[2] === window) return void 0;
-  return `oso-code: the green window names slice ${window}, so a commit from branch ${branch} is refused. Commit from the branch of slice ${window}, or wait for that window to close.`;
+  return `oso-code: the green window names slice ${window}, so a commit from branch ${reading.name} is refused. Commit from the branch of slice ${window}, or wait for that window to close.`;
 }
-function currentBranchOf(directory) {
+function currentBranchOf(workingDirectory, repositoryOptions = []) {
   try {
-    const branch = execFileSync2("git", ["-C", directory, "symbolic-ref", "--short", "-q", "HEAD"], {
+    const name = execFileSync2("git", [...repositoryOptions, "symbolic-ref", "--short", "-q", "HEAD"], {
+      cwd: workingDirectory,
       encoding: "utf8",
-      stdio: ["ignore", "pipe", "ignore"]
+      stdio: ["ignore", "pipe", "pipe"]
     }).trim();
-    return branch === "" ? void 0 : branch;
-  } catch {
-    return void 0;
+    return name === "" ? { kind: "detached" } : { kind: "branch", name };
+  } catch (error) {
+    if (error.status === DETACHED_HEAD_EXIT) return { kind: "detached" };
+    const stderr = error.stderr;
+    const reported = typeof stderr === "string" ? stderr.trim().replace(/\s+/g, " ") : "";
+    return { kind: "failed", cause: reported === "" ? causeOf(error) : reported };
   }
 }
 
@@ -395,7 +405,7 @@ function preCommitRun(cwd, marker) {
   return aborted(untilGreenMessage(state.content), "commit-denied", session);
 }
 function windowBinding(stateContent, cwd, session) {
-  const refusal = otherSliceBranchRefusal(stateContent, currentBranchOf(cwd));
+  const refusal = otherSliceBranchRefusal(stateContent, () => currentBranchOf(cwd));
   return refusal === void 0 ? COMMIT_PROCEEDS : aborted(refusal, "commit-denied", session);
 }
 function commitMarkerIn(environment) {

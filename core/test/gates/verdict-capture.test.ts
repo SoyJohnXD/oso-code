@@ -250,6 +250,22 @@ describe("a report under a launch token records one verdict per slice block", ()
     ]);
   });
 
+  test("a solo token keeps a risk: high block as a verdict so the slice can be receipted", () => {
+    const solo = `${JSON.stringify({ kind: "token", wave: "w1", token: "solo", slices: ["a"], session: SESSION, time: "2026-09-29T00:00:00Z" })}\n`;
+    const { records } = capturedAfter({ [STATE_FILE]: ATTENDED_SLICE_TWO, [WAVES]: solo }, [
+      subagentStop("oso-code:oso-verifier", "token: solo\nslice: a\nverdict: pass\nrisk: high auth"),
+    ]);
+    assert.deepEqual(summary(records), [{ slice: "a", verdict: "pass", verdict_shape: "valid", batch: 1, kind: undefined }]);
+  });
+
+  test("a batch-level blocked report records a batch-blocked marker per slice and no verifier record", () => {
+    const { records } = capturedAfter(seed, [subagentStop("oso-code:oso-verifier", "token: tk1\nstatus: blocked\nverdict: blocked")]);
+    assert.deepEqual(
+      summary(records).map(({ slice, verdict, kind }) => [slice, verdict, kind]),
+      [["a", undefined, "batch-blocked"], ["b", undefined, "batch-blocked"], ["c", undefined, "batch-blocked"]],
+    );
+  });
+
   test("a legacy single-verdict report under a token is malformed for every slice", () => {
     const { records } = capturedAfter(seed, [subagentStop("oso-code:oso-verifier", "token: tk1\nverdict: pass")]);
     assert.deepEqual(

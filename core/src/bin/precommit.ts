@@ -25,7 +25,7 @@ function preCommitRun(cwd: string, marker: string): PreCommitRun {
 }
 
 function windowBinding(stateContent: string, cwd: string, session: string): PreCommitRun {
-  const refusal = otherSliceBranchRefusal(stateContent, currentBranchOf(cwd));
+  const refusal = otherSliceBranchRefusal(stateContent, () => currentBranchOf(cwd));
   return refusal === undefined ? COMMIT_PROCEEDS : aborted(refusal, "commit-denied", session);
 }
 

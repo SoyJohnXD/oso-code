@@ -37,7 +37,9 @@ export const SLICE_MARKS = ["diagnosed", "escalated", "empty-result"] as const;
 
 export const RISK_HIGH_DISCARDED = "risk-high";
 
-const MARKER_KINDS = ["arm", RISK_HIGH_DISCARDED, ...SLICE_MARKS] as const;
+export const BATCH_BLOCKED = "batch-blocked";
+
+const MARKER_KINDS = ["arm", RISK_HIGH_DISCARDED, BATCH_BLOCKED, ...SLICE_MARKS] as const;
 
 export type Marker = Readonly<{
   kind: (typeof MARKER_KINDS)[number];
@@ -61,7 +63,7 @@ export function verdictsFileFor(stateFile: string): string {
 }
 
 export function appendVerdict(verdictsFile: string, capture: VerdictCapture): boolean {
-  return appendEntry(verdictsFile, capture.session, () => {
+  return appendJsonLine<VerdictRecord>(verdictsFile, capture.session, () => {
     const arming = newestArmingOf(readVerdicts(verdictsFile).entries, capture.slice);
     return {
       time: isoTimestamp(),
@@ -81,7 +83,7 @@ export function appendVerdict(verdictsFile: string, capture: VerdictCapture): bo
 }
 
 export function appendMarker(verdictsFile: string, marker: MarkerCapture): boolean {
-  return appendEntry(verdictsFile, marker.session, () => ({
+  return appendJsonLine<Marker>(verdictsFile, marker.session, () => ({
     kind: marker.kind,
     slice: marker.slice,
     session: marker.session,
@@ -146,9 +148,9 @@ export function armingsOf(entries: readonly VerdictLogEntry[]): Armings {
   return { everyArming, armMarkers, newestArmingOfSlice };
 }
 
-export function appendEntry(verdictsFile: string, session: string, entryOf: () => object): boolean {
+export function appendJsonLine<Line extends object>(verdictsFile: string, session: string, lineOf: () => Line): boolean {
   try {
-    const line = `${JSON.stringify(entryOf())}\n`;
+    const line = `${JSON.stringify(lineOf())}\n`;
     withOwnerOnlyUmask(() => {
       mkdirSync(path.dirname(verdictsFile), { recursive: true });
       appendFileSync(verdictsFile, line);

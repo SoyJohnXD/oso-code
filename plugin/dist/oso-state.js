@@ -915,6 +915,14 @@ function asJsLiteral(character) {
   return `\\u{${(character.codePointAt(0) ?? 0).toString(16)}}`;
 }
 
+// core/src/verdict/grammar.ts
+var RECORDED_VERDICTS = ["pass", "fail", "blocked", "none"];
+var VERDICT_SHAPES = ["valid", "malformed"];
+var SLICE_ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
+function isSliceId(value) {
+  return SLICE_ID.test(value);
+}
+
 // core/src/verdict/record.ts
 import { appendFileSync as appendFileSync2, mkdirSync as mkdirSync2 } from "node:fs";
 import path4 from "node:path";
@@ -1370,22 +1378,19 @@ function isErrnoException(error) {
   return error instanceof Error && "code" in error;
 }
 
-// core/src/verdict/grammar.ts
-var RECORDED_VERDICTS = ["pass", "fail", "blocked", "none"];
-var VERDICT_SHAPES = ["valid", "malformed"];
-
 // core/src/verdict/record.ts
 var VERIFIER_ROLE = "verifier";
 var TELEMETRY_WRITE_FAILED = "telemetry-write-failed";
 var VERIFY_GREEN_UNRECEIPTED = "verify-green-unreceipted";
 var SLICE_MARKS = ["diagnosed", "escalated", "empty-result"];
 var RISK_HIGH_DISCARDED = "risk-high";
-var MARKER_KINDS = ["arm", RISK_HIGH_DISCARDED, ...SLICE_MARKS];
+var BATCH_BLOCKED = "batch-blocked";
+var MARKER_KINDS = ["arm", RISK_HIGH_DISCARDED, BATCH_BLOCKED, ...SLICE_MARKS];
 function verdictsFileFor(stateFile) {
   return path4.join(runsDirectoryOf(stateFile), "verdicts.jsonl");
 }
 function appendMarker(verdictsFile, marker) {
-  return appendEntry(verdictsFile, marker.session, () => ({
+  return appendJsonLine(verdictsFile, marker.session, () => ({
     kind: marker.kind,
     slice: marker.slice,
     session: marker.session,
@@ -1436,9 +1441,9 @@ function armingsOf(entries) {
   }
   return { everyArming, armMarkers, newestArmingOfSlice };
 }
-function appendEntry(verdictsFile, session, entryOf) {
+function appendJsonLine(verdictsFile, session, lineOf) {
   try {
-    const line = `${JSON.stringify(entryOf())}
+    const line = `${JSON.stringify(lineOf())}
 `;
     withOwnerOnlyUmask(() => {
       mkdirSync2(path4.dirname(verdictsFile), { recursive: true });
@@ -1506,10 +1511,10 @@ function wavesFileFor(stateFile) {
   return path5.join(runsDirectoryOf(stateFile), "waves.jsonl");
 }
 function appendWave(wavesFile, wave) {
-  return appendEntry(wavesFile, wave.session, () => ({ kind: "wave", ...wave, time: isoTimestamp() }));
+  return appendJsonLine(wavesFile, wave.session, () => ({ kind: "wave", ...wave, time: isoTimestamp() }));
 }
 function appendLaunchToken(wavesFile, token) {
-  return appendEntry(wavesFile, token.session, () => ({ kind: "token", ...token, time: isoTimestamp() }));
+  return appendJsonLine(wavesFile, token.session, () => ({ kind: "token", ...token, time: isoTimestamp() }));
 }
 function readWaveLog(wavesFile) {
   const entries = (readFileIfPresent(wavesFile) ?? "").split("\n").filter((line) => line !== "").flatMap((line) => {
@@ -1546,10 +1551,10 @@ function waveOf(fields) {
   if (kind !== "wave" || typeof wave !== "string" || typeof session !== "string" || typeof time !== "string") return void 0;
   if (change !== null && typeof change !== "string") return void 0;
   if (!Array.isArray(slices)) return void 0;
-  const members = slices.flatMap((member) => waveSliceOf(member) ?? []);
+  const members = slices.flatMap((member) => recordedWaveSliceOf(member) ?? []);
   return members.length === slices.length ? { kind, wave, slices: members, session, change, time } : void 0;
 }
-function waveSliceOf(member) {
+function recordedWaveSliceOf(member) {
   if (typeof member !== "object" || member === null) return void 0;
   const { slice, risk } = member;
   const known = SLICE_RISKS.find((value) => value === risk);
@@ -1611,7 +1616,7 @@ function verdictMetrics(log, greensRead, armedSlice) {
   const roundsOfEachSlice = everyArming.map((arming) => arming.filter(isVerifierRecord)).filter((rounds) => rounds.length > 0);
   const verifierRecords = roundsOfEachSlice.flat();
   const firstFailSlices = roundsOfEachSlice.filter((rounds) => rounds[0]?.verdict === "fail").length;
-  const reds = greensRead.kind === "read" ? greensRead.integrationReds ?? [] : null;
+  const reds = greensRead.kind === "read" ? greensRead.integrationReds : null;
   const armed = armedOutcomesOf(armMarkers, everyArming, reds ?? []);
   const batched = classMetrics(armed.filter((outcome) => outcome.batched));
   const solo = classMetrics(armed.filter((outcome) => !outcome.batched));
@@ -1690,8 +1695,9 @@ function armedOutcomesOf(armMarkers, everyArming, reds) {
     ];
   });
 }
+var WAVE_KEY_SEPARATOR = "\0";
 function waveKey(session, wave) {
-  return `${session}\0${wave}`;
+  return `${session}${WAVE_KEY_SEPARATOR}${wave}`;
 }
 function waveStartsOf(armMarkers) {
   const starts = /* @__PURE__ */ new Map();
@@ -1704,14 +1710,17 @@ function waveStartsOf(armMarkers) {
 }
 function waveOfRed(waveStarts, red) {
   const candidates = [...waveStarts].filter(
-    ([key, start]) => key.startsWith(`${red.session}\0`) && start <= red.time
+    ([key, start]) => key.startsWith(`${red.session}${WAVE_KEY_SEPARATOR}`) && start <= red.time
   );
   return candidates.sort(([, left], [, right]) => right - left)[0]?.[0];
+}
+function escapedFirstPass(outcome) {
+  return outcome.inRedWave && outcome.firstVerdict === "pass";
 }
 function classMetrics(outcomes) {
   const firstFails = outcomes.filter((outcome) => outcome.firstVerdict === "fail").length;
   const inWave = outcomes.filter((outcome) => outcome.wave !== null);
-  const escaped = inWave.filter((outcome) => outcome.inRedWave && outcome.firstVerdict === "pass").length;
+  const escaped = inWave.filter(escapedFirstPass).length;
   return {
     slices: outcomes.length,
     first_fail_slices: firstFails,
@@ -1724,7 +1733,7 @@ function classMetrics(outcomes) {
 }
 function escapesOf(armed, greensRead) {
   if (greensRead.kind === "omitted") return { omitted: greensRead.reason };
-  const escaped = armed.filter((outcome) => outcome.batched && outcome.inRedWave && outcome.firstVerdict === "pass");
+  const escaped = armed.filter((outcome) => outcome.batched && escapedFirstPass(outcome));
   return { waves: new Set(escaped.map((outcome) => outcome.wave)).size, batched_slices: escaped.length };
 }
 function recommendationOf(batched, solo, escapes) {
@@ -2546,13 +2555,13 @@ function sliceOfArmedWave(stateFile, mark, slice) {
 function runWave(sessionId, remaining) {
   const [subverb, wave, ...pairs] = remaining;
   if (subverb !== "start" || wave === void 0) throw new UsageError();
-  const refusal = waveStartRefusal(wave, pairs);
-  if (refusal !== void 0) throw new RefusedError("wave start", refusal);
+  const start = waveStartOf(wave, pairs);
+  if ("refusal" in start) throw new RefusedError("wave start", start.refusal);
+  const { members } = start;
   const stateFile = stateFileFor(process.cwd());
   mkdirSync5(stateRootDirectory(), { recursive: true });
   return withLock(stateFile, sessionId, () => {
     const change = recordedStateValue(readFileIfPresent(stateFile, "skip") ?? "", "auto_change");
-    const members = pairs.flatMap((pair) => waveSliceOf2(pair) ?? []);
     if (!appendWave(wavesFileFor(stateFile), { wave, slices: members, session: sessionId, change })) {
       throw new RefusedError("wave start", "the wave record could not be written");
     }
@@ -2562,20 +2571,21 @@ function runWave(sessionId, remaining) {
     return 0;
   });
 }
-function waveSliceOf2(pair) {
+function slicePairOf(pair) {
   const eq = pair.lastIndexOf("=");
   const slice = pair.slice(0, eq);
   const risk = SLICE_RISKS.find((value) => value === pair.slice(eq + 1));
-  return eq < 1 || risk === void 0 || !isNameToken(slice) ? void 0 : { slice, risk };
+  return eq < 1 || risk === void 0 || !isSliceId(slice) ? void 0 : { slice, risk };
 }
-function waveStartRefusal(wave, pairs) {
-  if (!isNameToken(wave)) return `${wave} is not a wave name`;
-  if (pairs.length === 0) return "a wave lists at least one <slice>=<low|high>";
-  const malformed = pairs.find((pair) => waveSliceOf2(pair) === void 0);
-  if (malformed !== void 0) return `${malformed} is not <slice>=<low|high>`;
-  const ids = pairs.map((pair) => pair.slice(0, pair.lastIndexOf("=")));
-  const repeated = ids.find((slice, index) => ids.indexOf(slice) !== index);
-  return repeated === void 0 ? void 0 : `slice ${repeated} is listed twice`;
+function waveStartOf(wave, pairs) {
+  if (!isNameToken(wave)) return { refusal: `${wave} is not a wave name` };
+  if (pairs.length === 0) return { refusal: "a wave lists at least one <slice>=<low|high>" };
+  const parsed = pairs.map(slicePairOf);
+  const malformed = pairs[parsed.indexOf(void 0)];
+  if (malformed !== void 0) return { refusal: `${malformed} is not <slice>=<low|high>` };
+  const members = parsed.flatMap((member) => member ?? []);
+  const repeated = members.find(({ slice }, index) => members.findIndex((other) => other.slice === slice) !== index);
+  return repeated === void 0 ? { members } : { refusal: `slice ${repeated.slice} is listed twice` };
 }
 function runLaunchToken(sessionId, remaining) {
   const [wave, token, ...slices] = remaining;

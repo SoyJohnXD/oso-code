@@ -72,6 +72,9 @@ describe("oso-state wave start", () => {
       const badRisk = startWave(sandbox, "s1=medium");
       assert.equal(badRisk.exit, 1);
       assert.equal(badRisk.stderr, "oso-state: wave start refused: s1=medium is not <slice>=<low|high>\n");
+      const colon = startWave(sandbox, "s:1=low");
+      assert.equal(colon.exit, 1);
+      assert.equal(colon.stderr, "oso-state: wave start refused: s:1=low is not <slice>=<low|high>\n");
       const repeated = startWave(sandbox, "s1=low", "s1=high");
       assert.equal(repeated.exit, 1);
       assert.equal(repeated.stderr, "oso-state: wave start refused: slice s1 is listed twice\n");
