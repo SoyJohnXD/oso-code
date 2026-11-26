@@ -113,6 +113,17 @@ Child 1 verdict-receipt records every verifier report in `runs/<repo digest>/ver
 | the model a verifier ran on | the launch alias in the sibling `agent-<id>.meta.json`, else `null` | `subagent` path: the `execute.after` result carries no model field, so the record carries `null`; same for `oso_wave` |
 | a background verifier's report | not applicable: a `SubagentStop` fires when the child ends | not re-measured on 2.2.6; the plugin records nothing for a `subagent` result whose status is `running` |
 
+## What batched verification changed, and where OpenCode stands
+
+Low-risk slices of a parallel wave are verified in batches of up to 3, each slice with its own verdict (a batch verifier judges later slices with earlier ones in context, so the verdict is the slice's own, never an independent one). High-risk slices keep a solo verifier.
+
+| Change | Claude | OpenCode status |
+|---|---|---|
+| batch verification | an `Agent` launch of `oso-verifier` with a batch payload; the `SubagentStop` gate captures the report through the block grammar | `oso_wave` accepts one verifier child with `packets`, refuses a batch above 3 packets and a call above 4 children in code, and records through `execute.after` and `oso_wave` into the same core capture. PARITY by construction; the live run of a multi-worktree verifier is UNPROVEN: the evidence is config-level (`bash "*": allow`, `external_directory` allowing `~/.local/share/opencode/worktree/**`) and the provider had no credits |
+| one verdict record per slice block under a launch token | `core/src/verdict/capture.ts` | PARITY: the same writer |
+| per-slice receipts: a green window can name its slice (`green_slice`) | the commit gate and the git pre-commit layer refuse a commit from another slice's branch while the window is open | PARITY: the commit gate runs in-process in `execute.before` and the pre-commit layer is host-independent |
+| `oso-state report` splits batched from solo, counts escapes and recommends a batch size | the one core report | PARITY: the same binary |
+
 ## What the plan re-approval delta measured on 2.2.6
 
 OpenCode-only: Claude Code's native `ExitPlanMode` shows the whole plan, and nothing there changed. `core/test/certify/opencode-v2-plan-delta.test.ts` drives the built bundle headless against a held approved plan.

@@ -10,6 +10,7 @@ import {
 } from "../../src/verdict/record.ts";
 import {
   type GreensRead,
+  integrationRedsIn,
   renderReportTable,
   unreceiptedGreensIn,
   type VerdictMetrics,
@@ -33,7 +34,7 @@ const EVENTS = [
 
 describe("the verdict report reads the records after each arm marker of their slice", () => {
   const log = readVerdicts(FIXTURE);
-  const metrics = verdictMetrics(log, { kind: "read", greens: unreceiptedGreensIn(EVENTS) }, null);
+  const metrics = verdictMetrics(log, { kind: "read", greens: unreceiptedGreensIn(EVENTS), integrationReds: [] }, null);
 
   test("two of four armings opened on a fail, so the first-fail rate is 50.0 %", () => {
     assert.equal(metrics.slices, 4);
@@ -180,6 +181,97 @@ describe("the report counts the armed slice's rounds since its arming and since 
       renderReportTable(metrics),
       /^active slice\s+2: 0 rounds, no diagnosis yet; no verifier verdict since its arming$/m,
     );
+  });
+});
+
+function waveOf(wave: string, slices: readonly string[], batch: number | undefined, minute: number): VerdictLogEntry[] {
+  const time = (offset: number) => `2026-09-03T10:${String(minute + offset).padStart(2, "0")}:00Z`;
+  return slices.flatMap((slice) => [
+    { kind: "arm", slice, session: "ses-w", change: "gamma", time: time(0), wave } satisfies Marker,
+    {
+      ...verifiedBy("gamma", time(1), "pass"),
+      session: "ses-w",
+      slice,
+      ...(batch === undefined ? {} : { batch }),
+    },
+  ]);
+}
+
+describe("the report splits batched from solo armings, counts escapes and recommends past 20 batched slices", () => {
+  const notRead: GreensRead = { kind: "omitted", reason: "not read" };
+  const redAt = (minute: number) =>
+    integrationRedsIn(
+      JSON.stringify({ ts: `2026-09-03T10:${String(minute).padStart(2, "0")}:00Z`, event: "integration-red", command: "check", session: "ses-w" }),
+    );
+
+  function batchedWaves(count: number): VerdictLogEntry[] {
+    return Array.from({ length: count }, (_, index) =>
+      waveOf(`wave-${index}`, [`b${index}a`, `b${index}b`], 2, index * 2),
+    ).flat();
+  }
+
+  test("a first record with batch 2 or more is batched, anything else is solo, and each class has its own rates", () => {
+    const entries = [
+      ...waveOf("wave-1", ["1", "2"], 2, 0),
+      ...waveOf("wave-2", ["3"], undefined, 10),
+      { ...verifiedBy("gamma", "2026-09-03T10:40:00Z", "fail"), session: "ses-w", slice: "3" },
+    ];
+    const metrics = verdictMetrics({ entries, skippedLines: 0 }, notRead, null);
+    assert.equal(metrics.batched.slices, 2);
+    assert.equal(metrics.batched.first_fail_rate_percent, 0);
+    assert.equal(metrics.solo.slices, 1);
+    assert.deepEqual(metrics.solo.rounds_per_slice, { max: 2, median: 2 });
+    assert.match(renderReportTable(metrics), /^batched slices\s+0\.0 % first-fail \(0 of 2\), rounds max 1, median 1$/m);
+    assert.match(renderReportTable(metrics), /^solo slices\s+0\.0 % first-fail \(0 of 1\), rounds max 2, median 2$/m);
+  });
+
+  test("a wave with an integration red counts once, with the batched slices that passed in it", () => {
+    const entries = [...waveOf("wave-1", ["1", "2"], 2, 0), ...waveOf("wave-2", ["3", "4"], 2, 20)];
+    const greens: GreensRead = { kind: "read", greens: [], integrationReds: redAt(10) };
+    const metrics = verdictMetrics({ entries, skippedLines: 0 }, greens, null);
+    assert.deepEqual(metrics.escapes, { waves: 1, batched_slices: 2 });
+    assert.match(
+      renderReportTable(metrics),
+      /^escapes\s+1 waves with an integration red held 2 batched-passed slices \(conformance-finding escapes are not recorded\)$/m,
+    );
+  });
+
+  test("below 20 batched slices the recommendation says the sample is too small", () => {
+    const metrics = verdictMetrics({ entries: batchedWaves(9), skippedLines: 0 }, { kind: "read", greens: [], integrationReds: [] }, null);
+    assert.equal(metrics.recommendation, "none — sample too small: 18 of 20 batched slices needed");
+  });
+
+  test("20 batched slices with no escape and no worse first-fail rate keep batching", () => {
+    const metrics = verdictMetrics({ entries: batchedWaves(10), skippedLines: 0 }, { kind: "read", greens: [], integrationReds: [] }, null);
+    assert.match(metrics.recommendation, /^keep — /);
+  });
+
+  test("a rare batched escape above solo lowers the batch to 2", () => {
+    const entries = [...batchedWaves(10), ...waveOf("solo-wave", ["s"], undefined, 50)];
+    const greens: GreensRead = { kind: "read", greens: [], integrationReds: redAt(1) };
+    const metrics = verdictMetrics({ entries, skippedLines: 0 }, greens, null);
+    assert.equal(metrics.batched.escape_rate_percent, 10);
+    assert.match(metrics.recommendation, /^lower batch to 2 — /);
+  });
+
+  test("a batched escape rate above 10 % reverts", () => {
+    const greens: GreensRead = {
+      kind: "read",
+      greens: [],
+      integrationReds: [1, 3, 5].flatMap(redAt),
+    };
+    const metrics = verdictMetrics({ entries: batchedWaves(10), skippedLines: 0 }, greens, null);
+    assert.match(metrics.recommendation, /^revert — /);
+  });
+
+  test("the armed slice's wave lists each of its slices with its own rounds", () => {
+    const entries = waveOf("wave-1", ["1", "2"], 2, 0);
+    const metrics = verdictMetrics({ entries, skippedLines: 0 }, notRead, "1");
+    assert.deepEqual(
+      metrics.wave_slices.map((member) => [member.slice, member.rounds]),
+      [["1", 1], ["2", 1]],
+    );
+    assert.match(renderReportTable(metrics), /^wave slice\s+2: 1 round, no diagnosis yet; verdicts pass$/m);
   });
 });
 

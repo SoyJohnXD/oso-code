@@ -4,6 +4,7 @@ import { abstractionScanReport } from "../scan/abstraction-scan.ts";
 import { ScanFailure } from "../scan/changed-lines.ts";
 import { commentScanReport } from "../scan/comment-scan.ts";
 import { ereReads } from "../shell/ere.ts";
+import { isSliceId } from "../verdict/grammar.ts";
 import { greenReceiptOf, type GreenReceipt } from "../verdict/receipt.ts";
 import {
   appendMarker,
@@ -13,7 +14,18 @@ import {
   verdictsFileFor,
   VERIFY_GREEN_UNRECEIPTED,
 } from "../verdict/record.ts";
-import { type GreensRead, renderReportTable, unreceiptedGreensIn, verdictMetrics } from "../verdict/report.ts";
+import {
+  appendLaunchToken,
+  appendWave,
+  launchTokenRefusal,
+  newestWave,
+  newestWaveNamed,
+  readWaveLog,
+  SLICE_RISKS,
+  type WaveSlice,
+  wavesFileFor,
+} from "../verdict/wave.ts";
+import { type GreensRead, integrationRedsIn, renderReportTable, unreceiptedGreensIn, verdictMetrics } from "../verdict/report.ts";
 import * as knownKeys from "./known-keys.ts";
 import * as plan from "./plan.ts";
 import * as store from "./store.ts";
@@ -33,7 +45,9 @@ const USAGE = `usage: oso-state --session <id> set key=value [key=value ...]
        oso-state --session <id> amend-plan <slice-id>
        oso-state --session <id> deny-pattern add <pattern>
        oso-state --session <id> watch
-       oso-state --session <id> mark <diagnosed|escalated|empty-result>
+       oso-state --session <id> mark <diagnosed|escalated|empty-result> [slice]
+       oso-state --session <id> wave start <wave> <slice>=<low|high> [<slice>=<low|high> ...]
+       oso-state --session <id> launch-token <wave> <token> <slice> [<slice> ...]
        oso-state journal <text>
        oso-state journal --path
        oso-state scan comments <ref>
@@ -51,7 +65,13 @@ rate, rounds per slice, escalated slices, verdicts by model, malformed reports
 and unreceipted greens; --json prints the same fields as one JSON object.
 
 mark records a diagnosis, an escalation or an empty applier result against the
-armed slice, and is refused when no slice is armed.
+armed slice, and is refused when no slice is armed; inside a started wave it
+takes the id of one of the wave's slices instead.
+
+wave start records a wave's slices with their risk and arms each of them, so its
+rounds are counted per slice. launch-token registers the slices one verifier
+launch covers and is refused for an id outside the wave, a batch of more than 3
+slices or a batch holding a high-risk slice.
 
 watch polls this session's in-flight delegations and exits 0 once none is left,
 or 3 naming each one silent for 60 minutes, in flight for 3 hours or ended
@@ -168,6 +188,10 @@ function dispatch(argv: readonly string[]): number {
       return runWatch(sessionId, remaining);
     case "mark":
       return runMark(sessionId, remaining);
+    case "wave":
+      return runWave(sessionId, remaining);
+    case "launch-token":
+      return runLaunchToken(sessionId, remaining);
     case "scan":
       return dispatchScan(remaining);
     case "report":
@@ -217,7 +241,7 @@ function receiptOfGreen(
   preWriteSlice: string,
   written: ReadonlyMap<string, string>,
 ): GreenReceipt {
-  const receipt = greenReceiptOf(verdictsFileFor(stateFile), preWriteSlice, written);
+  const receipt = greenReceiptOf({ verdictsFile: verdictsFileFor(stateFile), wavesFile: wavesFileFor(stateFile) }, preWriteSlice, written);
   if (receipt.kind === "refused") throw new RefusedError(verb, receipt.reason);
   return receipt;
 }
@@ -234,16 +258,82 @@ function markArming(stateFile: string, sessionId: string, slice: string | undefi
 }
 
 function runMark(sessionId: string, remaining: readonly string[]): number {
-  if (remaining.length !== 1) throw new UsageError();
-  const word = remaining[0] as string;
+  if (remaining.length < 1 || remaining.length > 2) throw new UsageError();
+  const [word, waveSlice] = remaining as [string, string | undefined];
   const mark = SLICE_MARKS.find((value) => value === word);
   if (mark === undefined) throw new RefusedError("mark", `${word} is not one of ${SLICE_MARKS.join(", ")}`);
   const stateFile = store.stateFileFor(process.cwd());
-  const slice = activeSliceIn(stateFile);
+  const slice = waveSlice === undefined ? activeSliceIn(stateFile) : sliceOfArmedWave(stateFile, mark, waveSlice);
   if (slice === null) throw new RefusedError(`mark ${mark}`, "no slice is armed");
   const change = store.recordedStateValue(store.readFileIfPresent(stateFile, "skip") ?? "", "auto_change");
   appendMarker(verdictsFileFor(stateFile), { kind: mark, slice, session: sessionId, change });
   return 0;
+}
+
+function sliceOfArmedWave(stateFile: string, mark: string, slice: string): string {
+  const wave = newestWave(readWaveLog(wavesFileFor(stateFile)));
+  if (wave === undefined || !wave.slices.some((member) => member.slice === slice)) {
+    throw new RefusedError(`mark ${mark}`, `slice ${slice} is not in the armed wave`);
+  }
+  return slice;
+}
+
+function runWave(sessionId: string, remaining: readonly string[]): number {
+  const [subverb, wave, ...pairs] = remaining;
+  if (subverb !== "start" || wave === undefined) throw new UsageError();
+  const start = waveStartOf(wave, pairs);
+  if ("refusal" in start) throw new RefusedError("wave start", start.refusal);
+  const { members } = start;
+  const stateFile = store.stateFileFor(process.cwd());
+  mkdirSync(store.stateRootDirectory(), { recursive: true });
+  return store.withLock(stateFile, sessionId, () => {
+    const change = store.recordedStateValue(store.readFileIfPresent(stateFile, "skip") ?? "", "auto_change");
+    if (!appendWave(wavesFileFor(stateFile), { wave, slices: members, session: sessionId, change })) {
+      throw new RefusedError("wave start", "the wave record could not be written");
+    }
+    for (const { slice } of members) {
+      appendMarker(verdictsFileFor(stateFile), { kind: "arm", slice, session: sessionId, change, wave });
+    }
+    return 0;
+  });
+}
+
+function slicePairOf(pair: string): WaveSlice | undefined {
+  const eq = pair.lastIndexOf("=");
+  const slice = pair.slice(0, eq);
+  const risk = SLICE_RISKS.find((value) => value === pair.slice(eq + 1));
+  return eq < 1 || risk === undefined || !isSliceId(slice) ? undefined : { slice, risk };
+}
+
+function waveStartOf(wave: string, pairs: readonly string[]): Readonly<{ members: readonly WaveSlice[] }> | Readonly<{ refusal: string }> {
+  if (!store.isNameToken(wave)) return { refusal: `${wave} is not a wave name` };
+  if (pairs.length === 0) return { refusal: "a wave lists at least one <slice>=<low|high>" };
+  const parsed = pairs.map(slicePairOf);
+  const malformed = pairs[parsed.indexOf(undefined)];
+  if (malformed !== undefined) return { refusal: `${malformed} is not <slice>=<low|high>` };
+  const members = parsed.flatMap((member) => member ?? []);
+  const repeated = members.find(({ slice }, index) => members.findIndex((other) => other.slice === slice) !== index);
+  return repeated === undefined ? { members } : { refusal: `slice ${repeated.slice} is listed twice` };
+}
+
+function runLaunchToken(sessionId: string, remaining: readonly string[]): number {
+  const [wave, token, ...slices] = remaining;
+  if (wave === undefined || token === undefined) throw new UsageError();
+  if (!isSliceId(token)) throw new RefusedError("launch-token", `${token} is not a token name`);
+  const stateFile = store.stateFileFor(process.cwd());
+  mkdirSync(store.stateRootDirectory(), { recursive: true });
+  return store.withLock(stateFile, sessionId, () => {
+    const wavesFile = wavesFileFor(stateFile);
+    const log = readWaveLog(wavesFile);
+    const armed = newestWaveNamed(log, wave);
+    if (armed === undefined) throw new RefusedError("launch-token", `no ${wave} was started`);
+    const refusal = launchTokenRefusal(log, armed, token, slices);
+    if (refusal !== undefined) throw new RefusedError("launch-token", refusal);
+    if (!appendLaunchToken(wavesFile, { wave, token, slices, session: sessionId })) {
+      throw new RefusedError("launch-token", "the token could not be written");
+    }
+    return 0;
+  });
 }
 
 function runReport(remaining: readonly string[]): number {
@@ -265,7 +355,7 @@ function readGreens(): GreensRead {
   const read = store.readStateFile(eventsLog);
   if (read.kind === "absent") return { kind: "omitted", reason: `no events log at ${eventsLog}` };
   if (read.kind === "unreadable") return { kind: "omitted", reason: `cannot read ${eventsLog}: ${read.cause}` };
-  return { kind: "read", greens: unreceiptedGreensIn(read.content) };
+  return { kind: "read", greens: unreceiptedGreensIn(read.content), integrationReds: integrationRedsIn(read.content) };
 }
 
 function runWatch(sessionId: string, remaining: readonly string[]): number {

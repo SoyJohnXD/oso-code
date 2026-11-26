@@ -1,7 +1,7 @@
 // core/src/gates/autocontinue.ts
 import { spawnSync } from "node:child_process";
 import { mkdirSync as mkdirSync4, writeFileSync as writeFileSync2 } from "node:fs";
-import path7 from "node:path";
+import path8 from "node:path";
 
 // core/src/hosts/background-tasks.ts
 var NO_BACKGROUND_TASKS = { kind: "absent" };
@@ -477,7 +477,8 @@ function writeStatePairs(stateFile, pairs, ownerSession, removedKeys = []) {
   const read = readStateFile(stateFile);
   if (read.kind === "unreadable") throw new StateFileUnreadableError(stateFile, read.cause);
   const existing = read.kind === "ok" ? read.content : "";
-  let lines = parseStateLines(existing).filter((line) => !removedKeys.includes(line.key));
+  const staleKeys = pairsRewriteGreen(pairs) ? [...removedKeys, "green_slice"] : removedKeys;
+  let lines = parseStateLines(existing).filter((line) => !staleKeys.includes(line.key));
   for (const pair of [...pairs, `session=${ownerSession}`]) {
     const [key, value] = splitPair(pair);
     lines = lines.filter((line) => line.key !== key);
@@ -486,6 +487,10 @@ function writeStatePairs(stateFile, pairs, ownerSession, removedKeys = []) {
   const content = serializeStateLines(lines);
   renameSync(createTempFile(directory, content), stateFile);
   return content;
+}
+function pairsRewriteGreen(pairs) {
+  const keys = pairs.map((pair) => splitPair(pair)[0]);
+  return keys.includes("verify_green") && !keys.includes("green_slice");
 }
 function isSymlink(target) {
   const stats = lstatOrUndefined(target);
@@ -918,7 +923,7 @@ function removeLegacyWaitMarks(stateFile) {
 }
 
 // core/src/gates/in-flight.ts
-import path6 from "node:path";
+import path7 from "node:path";
 
 // core/src/prose/routes.ts
 var VERIFIER_AGENT = "oso-verifier";
@@ -945,6 +950,39 @@ function readVerdictShape(text) {
   const { verdict } = parseAgentVerdict(text);
   return verdict === void 0 ? { verdict: "none", verdict_shape: "malformed" } : { verdict, verdict_shape: "valid" };
 }
+var SLICE_LINE = /^\s*slice\s*:\s*(.*?)\s*$/i;
+var ID_SHAPE = "[A-Za-z0-9][A-Za-z0-9._-]*";
+var SLICE_ID = new RegExp(`^${ID_SHAPE}$`);
+var RISK_HIGH_LINE = /^\s*risk\s*:\s*high(?:\s.*)?$/i;
+function isSliceId(value) {
+  return SLICE_ID.test(value);
+}
+var TOKEN_LINE = new RegExp(`^\\s*token\\s*:\\s*(${ID_SHAPE})\\s*$`, "i");
+function readLaunchToken(text) {
+  return text.split(/\r?\n/).map((line) => line.match(TOKEN_LINE)?.[1]).find((token) => token !== void 0);
+}
+function readSliceBlocks(text) {
+  const readings = [];
+  let block;
+  for (const line of text.split(/\r?\n/)) {
+    if (SLICE_LINE.test(line)) {
+      if (block !== void 0) readings.push(readSliceBlock(block));
+      block = [line];
+      continue;
+    }
+    block?.push(line);
+  }
+  if (block !== void 0) readings.push(readSliceBlock(block));
+  return readings;
+}
+function readSliceBlock(lines) {
+  const id = lines[0].match(SLICE_LINE)[1];
+  if (!isSliceId(id)) return { verdict: "none", verdict_shape: "malformed" };
+  const reading = readVerdictShape(lines.join("\n"));
+  if (reading.verdict_shape === "malformed") return { slice: id, ...reading };
+  if (!lines.some((line) => RISK_HIGH_LINE.test(line))) return { slice: id, ...reading };
+  return { slice: id, ...reading, highRisk: true };
+}
 
 // core/src/verdict/record.ts
 import { appendFileSync as appendFileSync3, mkdirSync as mkdirSync3 } from "node:fs";
@@ -952,12 +990,14 @@ import path4 from "node:path";
 var VERIFIER_ROLE = "verifier";
 var TELEMETRY_WRITE_FAILED = "telemetry-write-failed";
 var SLICE_MARKS = ["diagnosed", "escalated", "empty-result"];
-var MARKER_KINDS = ["arm", ...SLICE_MARKS];
+var RISK_HIGH_DISCARDED = "risk-high";
+var BATCH_BLOCKED = "batch-blocked";
+var MARKER_KINDS = ["arm", RISK_HIGH_DISCARDED, BATCH_BLOCKED, ...SLICE_MARKS];
 function verdictsFileFor(stateFile) {
   return path4.join(runsDirectoryOf(stateFile), "verdicts.jsonl");
 }
 function appendVerdict(verdictsFile, capture) {
-  return appendEntry(verdictsFile, capture.session, () => {
+  return appendJsonLine(verdictsFile, capture.session, () => {
     const arming = newestArmingOf(readVerdicts(verdictsFile).entries, capture.slice);
     return {
       time: isoTimestamp(),
@@ -970,9 +1010,20 @@ function appendVerdict(verdictsFile, capture) {
       model: capture.model,
       verdict: capture.verdict,
       verdict_shape: capture.verdict_shape,
-      escalated: arming.some((entry) => isMarkerOf("escalated", entry))
+      escalated: arming.some((entry) => isMarkerOf("escalated", entry)),
+      ...capture.batch === void 0 ? {} : { batch: capture.batch }
     };
   });
+}
+function appendMarker(verdictsFile, marker) {
+  return appendJsonLine(verdictsFile, marker.session, () => ({
+    kind: marker.kind,
+    slice: marker.slice,
+    session: marker.session,
+    change: marker.change,
+    time: isoTimestamp(),
+    ...marker.wave === void 0 ? {} : { wave: marker.wave }
+  }));
 }
 function readVerdicts(verdictsFile) {
   const lines = (readFileIfPresent(verdictsFile) ?? "").split("\n").filter((line) => line !== "");
@@ -994,25 +1045,27 @@ function isVerifierRecord(entry) {
 }
 function armingsOf(entries) {
   const everyArming = [];
+  const armMarkers = [];
   const newestArmingOfSlice = /* @__PURE__ */ new Map();
   for (const entry of entries) {
     if (isMarkerOf("arm", entry)) {
       const arming = [];
       everyArming.push(arming);
+      armMarkers.push(entry);
       newestArmingOfSlice.set(entry.slice, arming);
       continue;
     }
     if (entry.slice !== null) newestArmingOfSlice.get(entry.slice)?.push(entry);
   }
-  return { everyArming, newestArmingOfSlice };
+  return { everyArming, armMarkers, newestArmingOfSlice };
 }
-function appendEntry(verdictsFile, session, entryOf) {
+function appendJsonLine(jsonlFile, session, lineOf) {
   try {
-    const line = `${JSON.stringify(entryOf())}
+    const line = `${JSON.stringify(lineOf())}
 `;
     withOwnerOnlyUmask(() => {
-      mkdirSync3(path4.dirname(verdictsFile), { recursive: true });
-      appendFileSync3(verdictsFile, line);
+      mkdirSync3(path4.dirname(jsonlFile), { recursive: true });
+      appendFileSync3(jsonlFile, line);
     });
     return true;
   } catch (error) {
@@ -1027,19 +1080,21 @@ function logEntryOf(line) {
   return verdictRecordOf(parsed);
 }
 function markerOf(fields) {
-  const { slice, session, change, time } = fields;
+  const { slice, session, change, time, wave } = fields;
   const kind = MARKER_KINDS.find((value) => value === fields["kind"]);
   if (kind === void 0 || !isText(slice) || !isText(session) || !isTextOrNull(change) || !isText(time)) return void 0;
-  return { kind, slice, session, change, time };
+  if (wave !== void 0 && !isText(wave)) return void 0;
+  return { kind, slice, session, change, time, ...wave === void 0 ? {} : { wave } };
 }
 function verdictRecordOf(fields) {
-  const { time, host, session, change, slice, attempt, role, model, verdict, verdict_shape, escalated } = fields;
+  const { time, host, session, change, slice, attempt, role, model, verdict, verdict_shape, escalated, batch } = fields;
   if (!isText(time) || !isText(session) || !isTextOrNull(change) || !isTextOrNull(slice) || !isText(role)) return void 0;
   if (!isHostName(host) || typeof attempt !== "number") return void 0;
   if (!isTextOrNull(model) || typeof escalated !== "boolean") return void 0;
   const recorded = RECORDED_VERDICTS.find((value) => value === verdict);
   const shape = VERDICT_SHAPES.find((value) => value === verdict_shape);
   if (recorded === void 0 || shape === void 0) return void 0;
+  if (batch !== void 0 && typeof batch !== "number") return void 0;
   return {
     time,
     host,
@@ -1051,7 +1106,8 @@ function verdictRecordOf(fields) {
     model,
     verdict: recorded,
     verdict_shape: shape,
-    escalated
+    escalated,
+    ...batch === void 0 ? {} : { batch }
   };
 }
 var HOST_NAMES = { claude: true, opencode: true };
@@ -1065,7 +1121,51 @@ function isTextOrNull(value) {
   return value === null || typeof value === "string";
 }
 
+// core/src/verdict/wave.ts
+import path5 from "node:path";
+var SLICE_RISKS = ["low", "high"];
+var BATCH_MAX_SLICES = 3;
+function isBatchSize(sliceCount) {
+  return sliceCount >= 2;
+}
+function wavesFileFor(stateFile) {
+  return path5.join(runsDirectoryOf(stateFile), "waves.jsonl");
+}
+function readWaveLog(wavesFile) {
+  const entries = (readFileIfPresent(wavesFile) ?? "").split("\n").filter((line) => line !== "").flatMap((line) => {
+    const entry = jsonObjectOf(line);
+    return entry === void 0 ? [] : [entry];
+  });
+  return {
+    waves: entries.flatMap((entry) => waveOf(entry) ?? []),
+    tokens: entries.flatMap((entry) => tokenOf(entry) ?? [])
+  };
+}
+function waveOf(fields) {
+  const { kind, wave, slices, session, change, time } = fields;
+  if (kind !== "wave" || typeof wave !== "string" || typeof session !== "string" || typeof time !== "string") return void 0;
+  if (change !== null && typeof change !== "string") return void 0;
+  if (!Array.isArray(slices)) return void 0;
+  const members = slices.flatMap((member) => recordedWaveSliceOf(member) ?? []);
+  return members.length === slices.length ? { kind, wave, slices: members, session, change, time } : void 0;
+}
+function recordedWaveSliceOf(member) {
+  if (typeof member !== "object" || member === null) return void 0;
+  const { slice, risk } = member;
+  const known = SLICE_RISKS.find((value) => value === risk);
+  return typeof slice === "string" && known !== void 0 ? { slice, risk: known } : void 0;
+}
+function tokenOf(fields) {
+  const { kind, wave, token, slices, session, time } = fields;
+  if (kind !== "token" || typeof wave !== "string" || typeof token !== "string") return void 0;
+  if (typeof session !== "string" || typeof time !== "string") return void 0;
+  if (!Array.isArray(slices) || !slices.every((slice) => typeof slice === "string")) return void 0;
+  return { kind, wave, token, slices, session, time };
+}
+
 // core/src/verdict/capture.ts
+var VERDICT_BLOCK_REJECTED = "verdict-block-rejected";
+var MALFORMED_READING = { verdict: "none", verdict_shape: "malformed" };
 function isVerifierAgent(agentType) {
   return agentType === VERIFIER_AGENT || agentType.endsWith(`:${VERIFIER_AGENT}`);
 }
@@ -1081,20 +1181,59 @@ function appendReportToItsRepository({ host, cwd, session, model, report }) {
   const stateFile = stateFileFor(cwd);
   const state = readFileIfPresent(stateFile);
   if (state === void 0) return;
-  appendVerdict(verdictsFileFor(stateFile), {
-    host,
+  const change = recordedStateValue(state, "auto_change");
+  const context = {
+    verdictsFile: verdictsFileFor(stateFile),
+    wavesFile: wavesFileFor(stateFile),
     session,
-    change: recordedStateValue(state, "auto_change"),
-    slice: recordedStateValue(state, "active_slice"),
-    role: VERIFIER_ROLE,
-    model,
-    ...readVerdictShape(report)
-  });
+    change,
+    base: { host, session, change, role: VERIFIER_ROLE, model }
+  };
+  const tokenName = readLaunchToken(report);
+  if (tokenName === void 0) appendSingleVerdict(context, report, recordedStateValue(state, "active_slice"));
+  else appendTokenBlocks(context, report, tokenName);
+}
+function appendSingleVerdict({ verdictsFile, base }, report, slice) {
+  appendVerdict(verdictsFile, { ...base, slice, ...readVerdictShape(report) });
+}
+function appendTokenBlocks(context, report, tokenName) {
+  const { verdictsFile, wavesFile, session, change, base } = context;
+  const token = readWaveLog(wavesFile).tokens.filter((registered) => registered.token === tokenName).at(-1);
+  if (token === void 0) {
+    logEvent({ event: VERDICT_BLOCK_REJECTED, session, command: `token ${tokenName} is not registered` });
+    return;
+  }
+  const blocks = readSliceBlocks(report);
+  for (const block of blocks) {
+    if (block.slice !== void 0 && !token.slices.includes(block.slice)) {
+      logEvent({ event: VERDICT_BLOCK_REJECTED, session, command: `slice ${block.slice} is not under token ${token.token}` });
+    }
+  }
+  const batchBlocked = blocks.length === 0 && readVerdictShape(report).verdict === "blocked";
+  for (const slice of token.slices) {
+    if (batchBlocked) {
+      appendMarker(verdictsFile, { kind: BATCH_BLOCKED, slice, session, change });
+      continue;
+    }
+    const block = blocks.find((candidate) => candidate.slice === slice);
+    if (discardsHighRisk(block, token)) {
+      appendMarker(verdictsFile, { kind: RISK_HIGH_DISCARDED, slice, session, change });
+      continue;
+    }
+    appendVerdict(verdictsFile, tokenRecordOf({ ...base, slice }, token, block));
+  }
+}
+function discardsHighRisk(block, token) {
+  return block?.verdict_shape === "valid" && block.highRisk === true && isBatchSize(token.slices.length);
+}
+function tokenRecordOf(base, token, block) {
+  const reading = block?.verdict_shape === "valid" ? { verdict: block.verdict, verdict_shape: "valid" } : MALFORMED_READING;
+  return { ...base, ...reading, batch: token.slices.length };
 }
 
 // core/src/gates/preflight.ts
 import { existsSync } from "node:fs";
-import path5 from "node:path";
+import path6 from "node:path";
 import { fileURLToPath } from "node:url";
 var RUN_ARMED = "running";
 function sanitizeSession(raw) {
@@ -1153,7 +1292,7 @@ function allowedWithResidueCounted(session, command) {
 function pluginRootDirectory() {
   const configured = process.env["CLAUDE_PLUGIN_ROOT"];
   if (configured !== void 0 && configured !== "") return configured;
-  return pluginRootAbove(path5.dirname(fileURLToPath(import.meta.url)));
+  return pluginRootAbove(path6.dirname(fileURLToPath(import.meta.url)));
 }
 var PLUGIN_ROOT_WRAPPERS = [[], ["plugin"]];
 var HOOKS_MANIFEST_LOCATIONS = [["hooks.json"], ["hooks", "hooks.json"]];
@@ -1162,10 +1301,10 @@ function pluginRootAbove(moduleDirectory) {
   let candidate = moduleDirectory;
   while (true) {
     for (const wrapper of PLUGIN_ROOT_WRAPPERS) {
-      const root = path5.join(candidate, ...wrapper);
-      if (existsSync(path5.join(root, "bin", "oso-state")) && isVerifiedOsoCodeRoot(root)) return root;
+      const root = path6.join(candidate, ...wrapper);
+      if (existsSync(path6.join(root, "bin", "oso-state")) && isVerifiedOsoCodeRoot(root)) return root;
     }
-    const parent = path5.dirname(candidate);
+    const parent = path6.dirname(candidate);
     if (parent === candidate) {
       throw new Error(
         `no ancestor of ${moduleDirectory} carries a verified oso-code bin/oso-state, directly or one level under plugin/, to anchor the plugin root on`
@@ -1175,7 +1314,7 @@ function pluginRootAbove(moduleDirectory) {
   }
 }
 function isVerifiedOsoCodeRoot(root) {
-  return HOOKS_MANIFEST_LOCATIONS.some((segments) => hooksManifestFingerprinted(path5.join(root, ...segments)));
+  return HOOKS_MANIFEST_LOCATIONS.some((segments) => hooksManifestFingerprinted(path6.join(root, ...segments)));
 }
 function hooksManifestFingerprinted(manifestFile) {
   return readFileIfPresent(manifestFile, "skip")?.includes(HOOKS_MANIFEST_FINGERPRINT) ?? false;
@@ -1336,7 +1475,7 @@ function sessionRunOf(envelope) {
 function derivedTranscriptPath(envelope, agentId) {
   const sessionId = sanitizeSession(envelope.sessionId);
   if (envelope.transcriptPath === "" || sessionId === "") return "";
-  return path6.join(path6.dirname(envelope.transcriptPath), sessionId, "subagents", `agent-${agentId}.jsonl`);
+  return path7.join(path7.dirname(envelope.transcriptPath), sessionId, "subagents", `agent-${agentId}.jsonl`);
 }
 function unregistered(envelope, gate) {
   const route = gateRow(gate);
@@ -1572,7 +1711,7 @@ function announceCap(position) {
 }
 function rememberTally(position, pushes, progress) {
   try {
-    mkdirSync4(path7.dirname(position.tallyFile), { recursive: true, mode: OWNER_ONLY_DIRECTORY });
+    mkdirSync4(path8.dirname(position.tallyFile), { recursive: true, mode: OWNER_ONLY_DIRECTORY });
     writeFileSync2(position.tallyFile, `pushes=${pushes}
 ${progress.recorded()}`, { mode: OWNER_ONLY_FILE });
     return void 0;
@@ -1603,7 +1742,7 @@ function gateEvent(event, session, detail) {
   return { event, session, command: detail, gate: route.script, hookEvent: route.event };
 }
 function tallyFileFor(journalFile) {
-  return path7.join(path7.dirname(journalFile), `${path7.basename(journalFile, ".log")}.pushes`);
+  return path8.join(path8.dirname(journalFile), `${path8.basename(journalFile, ".log")}.pushes`);
 }
 
 // core/src/hosts/hook-run.ts
@@ -1689,6 +1828,9 @@ function blockEnvelope(reason) {
 function endedEnvelope(reason) {
   return JSON.stringify({ continue: false, stopReason: reason, systemMessage: reason });
 }
+
+// core/src/gates/commit.ts
+import { execFileSync as execFileSync2 } from "node:child_process";
 
 // core/src/shell/lexed-word.ts
 var UNREAD_PAYLOAD_MARKER = "!unread-payload";
@@ -3012,6 +3154,45 @@ function verifyIsGreen(stateContent) {
 function commitGateArmedFor(stateContent, session) {
   return holdsMode(stateContent) && foreignOwner(stateContent, session) === void 0;
 }
+var WAVE_WINDOW_PREFIX = "wave-";
+var SLICE_BRANCH_FAMILY = "oso";
+var SLICE_BRANCH_SEGMENTS = 3;
+var REPOSITORY_VALUE_OPTIONS = ["-C", "--git-dir", "--work-tree"];
+var DETACHED_HEAD_EXIT = 1;
+function windowSliceOf(stateContent) {
+  if (!verifyIsGreen(stateContent)) return void 0;
+  if (!stateValue(stateContent, "active_slice").startsWith(WAVE_WINDOW_PREFIX)) return void 0;
+  const named = stateValue(stateContent, "green_slice");
+  return named === "" ? void 0 : named;
+}
+function otherSliceBranchRefusal(stateContent, readBranch2) {
+  const window = windowSliceOf(stateContent);
+  if (window === void 0) return void 0;
+  const reading = readBranch2();
+  if (reading.kind === "detached") return void 0;
+  if (reading.kind === "failed") {
+    return `oso-code: the green window names slice ${window}, but the committing branch could not be read (${reading.cause}), so the commit is refused.`;
+  }
+  const segments = reading.name.split("/");
+  if (segments.length !== SLICE_BRANCH_SEGMENTS || segments[0] !== SLICE_BRANCH_FAMILY) return void 0;
+  if (segments[2] === window) return void 0;
+  return `oso-code: the green window names slice ${window}, so a commit from branch ${reading.name} is refused. Commit from the branch of slice ${window}, or wait for that window to close.`;
+}
+function currentBranchOf(workingDirectory, repositoryOptions = []) {
+  try {
+    const name = execFileSync2("git", [...repositoryOptions, "symbolic-ref", "--short", "-q", "HEAD"], {
+      cwd: workingDirectory,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"]
+    }).trim();
+    return name === "" ? { kind: "detached" } : { kind: "branch", name };
+  } catch (error) {
+    if (error.status === DETACHED_HEAD_EXIT) return { kind: "detached" };
+    const stderr = error.stderr;
+    const reported = typeof stderr === "string" ? stderr.trim().replace(/\s+/g, " ") : "";
+    return { kind: "failed", cause: reported === "" ? causeOf(error) : reported };
+  }
+}
 function judgeCommit({ envelope }) {
   const session = hookSessionId(envelope);
   if (session === "") return payloadUnparseable();
@@ -3020,9 +3201,13 @@ function judgeCommit({ envelope }) {
   if (state.kind === "absent") return ALLOWED;
   if (state.kind === "unusable") return deniedForUnusableState("commit", stateFile, session);
   if (!commitGateArmedFor(state.content, session)) return ALLOWED;
-  const verdict = lineVerdict(envelope.commandLine, judgeCommitLine);
+  const repositoryOptions = [];
+  const verdict = lineVerdict(envelope.commandLine, (command, soFar) => {
+    if (isGatedGitCall(command)) repositoryOptions.push(repositoryOptionsOf(command));
+    return judgeCommitLine(command, soFar);
+  });
   if (verdict === "clear") return ALLOWED;
-  if (verifyIsGreen(state.content)) return ALLOWED;
+  if (verifyIsGreen(state.content)) return windowBindingOutcome(state.content, { repositoryOptions, cwd: envelope.cwd }, session, envelope.commandLine);
   if (verdict === "residue" || verdict === "unread") {
     return allowedWithResidueCounted(session, envelope.commandLine);
   }
@@ -3032,6 +3217,22 @@ function judgeCommit({ envelope }) {
     event: "commit-denied",
     session,
     detail: envelope.commandLine
+  });
+}
+function windowBindingOutcome(stateContent, invocations, session, commandLine) {
+  for (const options of invocations.repositoryOptions) {
+    const message = otherSliceBranchRefusal(stateContent, () => currentBranchOf(invocations.cwd, options));
+    if (message !== void 0) return denied({ gate: "commit", message, event: "commit-denied", session, detail: commandLine });
+  }
+  return ALLOWED;
+}
+function repositoryOptionsOf(command) {
+  const { at } = gitVerbAt(command);
+  const options = command.tokens.slice(1, at);
+  return options.flatMap((token, position) => {
+    if (REPOSITORY_VALUE_OPTIONS.some((option) => token.startsWith(`${option}=`))) return [token];
+    if (REPOSITORY_VALUE_OPTIONS.includes(token)) return [token, options[position + 1] ?? ""];
+    return [];
   });
 }
 function judgeCommitLine(command, verdict) {
@@ -3625,7 +3826,7 @@ function reanchorContext(journalFile, unattendedRun) {
 }
 
 // core/src/gates/stale.ts
-import path8 from "node:path";
+import path9 from "node:path";
 var ROADMAP_DISARMED_SENTINEL = "none";
 var ROADMAP_PLACEHOLDER = "{roadmap}";
 var STALE_GATE = {
@@ -3657,7 +3858,7 @@ function staleStateContext(caller, stateFile, content, sessionId) {
   const skillPrefix = skillPrefixFor(caller.host);
   const stateBin = quoted(stateBinPath(caller));
   const clearCommand = `${stateBin} --session ${quoted(sessionId)} clear`;
-  const leftByAnother = `oso-code: this repository's own runtime state (${path8.basename(stateFile)}) was left by another session, and its flags arm this session's gates too`;
+  const leftByAnother = `oso-code: this repository's own runtime state (${path9.basename(stateFile)}) was left by another session, and its flags arm this session's gates too`;
   const roadmapValue = stateValue(content, "roadmap");
   const roadmapInFlight = roadmapValue === ROADMAP_DISARMED_SENTINEL ? "" : roadmapValue;
   if (roadmapInFlight === "") {
@@ -3673,7 +3874,7 @@ function skillPrefixFor(host) {
 }
 function stateBinPath(caller) {
   if (caller.stateBin !== "") return caller.stateBin;
-  return path8.join(pluginRootDirectory(), "bin", "oso-state");
+  return path9.join(pluginRootDirectory(), "bin", "oso-state");
 }
 function quoted(value) {
   return `"${value}"`;
@@ -3681,7 +3882,7 @@ function quoted(value) {
 
 // core/src/gates/statebin.ts
 import { appendFileSync as appendFileSync4 } from "node:fs";
-import path9 from "node:path";
+import path10 from "node:path";
 var STATEBIN_GATE = {
   gate: "statebin",
   errorSubject: "the state-bin gate",
@@ -3690,16 +3891,16 @@ var STATEBIN_GATE = {
 function judgeStatebin(_request) {
   const envFile = process.env["CLAUDE_ENV_FILE"];
   if (envFile === void 0 || envFile === "") return NO_VERDICT;
-  const stateBin = path9.join(pluginRootDirectory(), "bin", "oso-state");
+  const stateBin = path10.join(pluginRootDirectory(), "bin", "oso-state");
   appendFileSync4(envFile, `export OSO_STATE_BIN=${stateBin}
 `);
   return NO_VERDICT;
 }
 
 // core/src/gates/teardown.ts
-import { execFileSync as execFileSync2 } from "node:child_process";
+import { execFileSync as execFileSync3 } from "node:child_process";
 import { existsSync as existsSync2, readdirSync as readdirSync2, renameSync as renameSync2, rmSync as rmSync4, rmdirSync, statSync as statSync2 } from "node:fs";
-import path10 from "node:path";
+import path11 from "node:path";
 var ABANDONED_STATE_DAYS = 7;
 var EVENTS_LOG_RETENTION_DAYS = 30;
 var SECONDS_PER_DAY = 86400;
@@ -3727,7 +3928,7 @@ function stateArmedBy(sessionId) {
 }
 function removeWorktreesOf(sessionId, stateFile) {
   if (sessionId === "") return;
-  const sessionWorktrees = path10.join(stateRootDirectory(), "worktrees", sessionId);
+  const sessionWorktrees = path11.join(stateRootDirectory(), "worktrees", sessionId);
   if (!isDirectory(sessionWorktrees)) return;
   if (stateFile === void 0) return;
   const repoPath = stateValueOf(stateFile, "repo_path");
@@ -3776,7 +3977,7 @@ function clearRoadmapInFlightOf(sessionId) {
   }
 }
 function rotateAgedEventsLog() {
-  const eventsLog = path10.join(stateRootDirectory(), "events.jsonl");
+  const eventsLog = path11.join(stateRootDirectory(), "events.jsonl");
   if (!olderThanDays(eventsLog, EVENTS_LOG_RETENTION_DAYS)) return;
   renameSync2(eventsLog, `${eventsLog}.1`);
 }
@@ -3800,10 +4001,10 @@ function stateValueOf(stateFile, key) {
   return read.kind === "ok" ? stateValue(read.content, key) : "";
 }
 function stateFilesSorted() {
-  return directoryEntries(stateRootDirectory()).filter((name) => name.endsWith(".state")).sort().map((name) => path10.join(stateRootDirectory(), name)).filter((target) => isFile(target));
+  return directoryEntries(stateRootDirectory()).filter((name) => name.endsWith(".state")).sort().map((name) => path11.join(stateRootDirectory(), name)).filter((target) => isFile(target));
 }
 function subdirectoriesSorted(directory) {
-  return directoryEntries(directory).sort().map((name) => path10.join(directory, name)).filter((target) => isDirectory(target));
+  return directoryEntries(directory).sort().map((name) => path11.join(directory, name)).filter((target) => isDirectory(target));
 }
 function directoryEntries(directory) {
   try {
@@ -3818,7 +4019,7 @@ function isFile(target) {
 }
 function gitWorktreeRemove(repoPath, worktreePath) {
   try {
-    execFileSync2("git", ["-C", repoPath, "worktree", "remove", worktreePath], { stdio: "ignore" });
+    execFileSync3("git", ["-C", repoPath, "worktree", "remove", worktreePath], { stdio: "ignore" });
     return true;
   } catch {
     return false;
@@ -3826,7 +4027,7 @@ function gitWorktreeRemove(repoPath, worktreePath) {
 }
 function gitWorktreePrune(repoPath) {
   try {
-    execFileSync2("git", ["-C", repoPath, "worktree", "prune"], { stdio: "ignore" });
+    execFileSync3("git", ["-C", repoPath, "worktree", "prune"], { stdio: "ignore" });
     return true;
   } catch {
     return false;
@@ -3834,10 +4035,10 @@ function gitWorktreePrune(repoPath) {
 }
 
 // core/src/gates/unknown.ts
-import path13 from "node:path";
+import path14 from "node:path";
 
 // core/src/install/opencode.ts
-import path11 from "node:path";
+import path12 from "node:path";
 
 // core/src/install/backup.ts
 var DISK_BLOCK_SIZE_BYTES = 512;
@@ -3909,37 +4110,37 @@ function messageOf(error) {
 
 // core/src/install/opencode.ts
 function opencodePathsFor(homeDirectory2, environment) {
-  const configHome = path11.join(environment["XDG_CONFIG_HOME"] ?? path11.join(homeDirectory2, ".config"), "opencode");
-  const stateRoot = path11.join(homeDirectory2, ".local", "state", "oso-code");
+  const configHome = path12.join(environment["XDG_CONFIG_HOME"] ?? path12.join(homeDirectory2, ".config"), "opencode");
+  const stateRoot = path12.join(homeDirectory2, ".local", "state", "oso-code");
   return {
     homeDirectory: homeDirectory2,
     configHome,
-    configFile: path11.join(configHome, "opencode.json"),
-    globalFile: path11.join(configHome, "AGENTS.md"),
+    configFile: path12.join(configHome, "opencode.json"),
+    globalFile: path12.join(configHome, "AGENTS.md"),
     stateRoot,
     backupsRoot: stateRoot
   };
 }
 
 // core/src/install/opencode-install-layout.ts
-import path12 from "node:path";
+import path13 from "node:path";
 function openCodeInstallTargets(paths) {
   return {
-    skills: path12.join(paths.configHome, "skill"),
-    agents: path12.join(paths.configHome, "agent"),
-    commands: path12.join(paths.configHome, "command"),
-    plugin: path12.join(paths.configHome, "plugin"),
-    hooks: path12.join(paths.configHome, "hooks"),
-    gitHooks: path12.join(paths.configHome, "git-hooks"),
-    stateBin: path12.join(paths.configHome, "bin"),
-    dist: path12.join(paths.configHome, "dist"),
-    engramPlugin: path12.join(paths.configHome, "plugins", "engram.ts"),
-    impeccableMount: path12.join(paths.homeDirectory, ".agents", "skills", "impeccable"),
-    impeccableOptOut: path12.join(paths.stateRoot, "impeccable-opt-out"),
-    ownerRegistry: path12.join(paths.stateRoot, "opencode-install-registry"),
-    restoreExercisedMarker: path12.join(paths.stateRoot, ".install-restore-verified-opencode"),
-    planArtifactRoot: path12.join(paths.stateRoot, "plans"),
-    installRecord: path12.join(paths.configHome, "oso-code-install.json")
+    skills: path13.join(paths.configHome, "skill"),
+    agents: path13.join(paths.configHome, "agent"),
+    commands: path13.join(paths.configHome, "command"),
+    plugin: path13.join(paths.configHome, "plugin"),
+    hooks: path13.join(paths.configHome, "hooks"),
+    gitHooks: path13.join(paths.configHome, "git-hooks"),
+    stateBin: path13.join(paths.configHome, "bin"),
+    dist: path13.join(paths.configHome, "dist"),
+    engramPlugin: path13.join(paths.configHome, "plugins", "engram.ts"),
+    impeccableMount: path13.join(paths.homeDirectory, ".agents", "skills", "impeccable"),
+    impeccableOptOut: path13.join(paths.stateRoot, "impeccable-opt-out"),
+    ownerRegistry: path13.join(paths.stateRoot, "opencode-install-registry"),
+    restoreExercisedMarker: path13.join(paths.stateRoot, ".install-restore-verified-opencode"),
+    planArtifactRoot: path13.join(paths.stateRoot, "plans"),
+    installRecord: path13.join(paths.configHome, "oso-code-install.json")
   };
 }
 function isOpenCodeInstallRecord(parsed) {
@@ -4001,7 +4202,7 @@ function deniedUntilASliceIsArmed(toolName, session) {
   });
 }
 function harnessTreeTargetOf(envelope) {
-  const targets = writeTargetsOf(envelope).map((target) => path13.resolve(envelope.cwd, target));
+  const targets = writeTargetsOf(envelope).map((target) => path14.resolve(envelope.cwd, target));
   if (targets.length === 0) return void 0;
   const harnessTree = installedHarnessTree();
   return targets.find((target) => harnessTree.some((directory) => liesWithin(directory, target)));
@@ -4018,8 +4219,8 @@ function installedHarnessTree() {
   return [targets.skills, targets.agents, targets.commands, targets.plugin, targets.hooks, paths.stateRoot];
 }
 function liesWithin(directory, target) {
-  const relative = path13.relative(directory, target);
-  const escapes = relative === ".." || relative.startsWith(`..${path13.sep}`) || path13.isAbsolute(relative);
+  const relative = path14.relative(directory, target);
+  const escapes = relative === ".." || relative.startsWith(`..${path14.sep}`) || path14.isAbsolute(relative);
   return !escapes;
 }
 function readAllowlist(argv) {
@@ -4044,17 +4245,17 @@ function allowlistCarries(allowlist, toolName) {
 }
 
 // core/src/gates/version.ts
-import { execFileSync as execFileSync3 } from "node:child_process";
-import path17 from "node:path";
+import { execFileSync as execFileSync4 } from "node:child_process";
+import path18 from "node:path";
 
 // core/src/install/opencode-host.ts
 import { spawnSync as spawnSync2 } from "node:child_process";
 import { mkdtempSync, rmSync as rmSync5 } from "node:fs";
 import { tmpdir } from "node:os";
-import path15 from "node:path";
+import path16 from "node:path";
 
 // core/src/install/verify-claude.ts
-import path14 from "node:path";
+import path15 from "node:path";
 function compareVersionsAscending(a, b) {
   const segmentsOf = (value) => value.split(/(\d+)/).filter((segment) => segment !== "");
   const left = segmentsOf(a);
@@ -4073,9 +4274,9 @@ function collapsedNewlines(text) {
   return text.replace(/\n+$/, "").replace(/\n/g, " ");
 }
 function firstExecutableOnPath(environment, binaryName) {
-  const entries = (environment["PATH"] ?? "").split(path14.delimiter).filter((entry) => entry !== "");
+  const entries = (environment["PATH"] ?? "").split(path15.delimiter).filter((entry) => entry !== "");
   for (const entry of entries) {
-    const candidate = path14.join(entry, binaryName);
+    const candidate = path15.join(entry, binaryName);
     if (isExecutableRegularFile(candidate)) return candidate;
   }
   return void 0;
@@ -4134,7 +4335,7 @@ function versionFieldOf(probeOutput) {
   return versionLineReadingOf(strippedPerLine, OPENCODE_VERSION_LINE);
 }
 function probedVersion(environment, binaryPath) {
-  const probeHome = mkdtempSync(path15.join(environment["TMPDIR"] ?? tmpdir(), PROBE_HOME_PREFIX));
+  const probeHome = mkdtempSync(path16.join(environment["TMPDIR"] ?? tmpdir(), PROBE_HOME_PREFIX));
   try {
     const run = spawnSync2(binaryPath, ["--version"], {
       env: probeEnvironment(environment, probeHome),
@@ -4152,15 +4353,15 @@ function probeEnvironment(environment, probeHome) {
     HOME: probeHome,
     USERPROFILE: probeHome,
     TMPDIR: probeHome,
-    XDG_CONFIG_HOME: path15.join(probeHome, ".config"),
-    XDG_STATE_HOME: path15.join(probeHome, ".local", "state"),
-    XDG_CACHE_HOME: path15.join(probeHome, ".cache"),
-    XDG_DATA_HOME: path15.join(probeHome, ".local", "share")
+    XDG_CONFIG_HOME: path16.join(probeHome, ".config"),
+    XDG_STATE_HOME: path16.join(probeHome, ".local", "state"),
+    XDG_CACHE_HOME: path16.join(probeHome, ".cache"),
+    XDG_DATA_HOME: path16.join(probeHome, ".local", "share")
   };
 }
 
 // core/src/install/opencode-trust.ts
-import path16 from "node:path";
+import path17 from "node:path";
 
 // core/src/install/trust.ts
 import { readFileSync as readFileSync3 } from "node:fs";
@@ -4186,11 +4387,11 @@ var INSTALLED_TREE_MAP = [
   { published: "plugin/bin/", installed: "bin/" }
 ];
 function openCodeTrustTargetUnder(rootKind, root, published) {
-  if (rootKind === "source") return path16.join(root, ...published.split("/"));
+  if (rootKind === "source") return path17.join(root, ...published.split("/"));
   const mapped = INSTALLED_TREE_MAP.find((row) => row.published === published || row.published.endsWith("/") && published.startsWith(row.published));
   if (mapped === void 0) return void 0;
   const relative = mapped.published.endsWith("/") ? `${mapped.installed}${published.slice(mapped.published.length)}` : mapped.installed;
-  return path16.join(root, ...relative.split("/"));
+  return path17.join(root, ...relative.split("/"));
 }
 
 // core/src/install/pins.ts
@@ -4286,10 +4487,10 @@ function judgeVersion({ envelope }) {
   return { verdict: { kind: "context", additionalContext: context }, events: [] };
 }
 function pluginManifestFile() {
-  return path17.join(pluginRootDirectory(), ".claude-plugin", "plugin.json");
+  return path18.join(pluginRootDirectory(), ".claude-plugin", "plugin.json");
 }
 function publishedReleaseCacheFile() {
-  return path17.join(stateRootDirectory(), "published-release");
+  return path18.join(stateRootDirectory(), "published-release");
 }
 function repositorySlugOf(repositoryUrl) {
   if (!repositoryUrl.startsWith(GITHUB_URL_PREFIX) || repositoryUrl.length === GITHUB_URL_PREFIX.length) {
@@ -4300,7 +4501,7 @@ function repositorySlugOf(repositoryUrl) {
 }
 function marketplaceServesRepository(repositorySlug) {
   const home = homeDirectoryFrom(process.platform, process.env);
-  const marketplacesFile = path17.join(home, ".claude", "plugins", "known_marketplaces.json");
+  const marketplacesFile = path18.join(home, ".claude", "plugins", "known_marketplaces.json");
   const registrations = readFileOrEmpty(marketplacesFile).replace(/\s/g, "");
   return registrations.includes(`"repo":"${repositorySlug}"`);
 }
@@ -4319,7 +4520,7 @@ function cachedPublishedRelease(cacheFile) {
 function refreshPublishedReleaseCache(cacheFile, repositorySlug) {
   try {
     writeFileAtomically(
-      path17.dirname(cacheFile),
+      path18.dirname(cacheFile),
       cacheFile,
       fetchedHighestReleaseVersion(repositorySlug),
       ".published-release."
@@ -4333,7 +4534,7 @@ function fetchedHighestReleaseVersion(repositorySlug) {
 }
 function gitUploadPackAdvertisement(repositorySlug) {
   try {
-    return execFileSync3(
+    return execFileSync4(
       "curl",
       [
         "-fsS",
@@ -4447,7 +4648,7 @@ function explainedCause(cause) {
 
 // core/src/state/plan.ts
 import { chmodSync, existsSync as existsSync3, mkdirSync as mkdirSync5, readFileSync as readFileSync4, renameSync as renameSync3, rmSync as rmSync6 } from "node:fs";
-import path18 from "node:path";
+import path19 from "node:path";
 
 // core/src/state/transitions.ts
 function armPlan() {
@@ -4464,14 +4665,14 @@ function isValidPlanDigest(value) {
   return PLAN_DIGEST_PATTERN.test(value);
 }
 function planPaths(stateFile, digest) {
-  const root = path18.join(stateRootDirectory(), "plans");
-  const dir = path18.join(root, repositoryIdFor(stateFile));
+  const root = path19.join(stateRootDirectory(), "plans");
+  const dir = path19.join(root, repositoryIdFor(stateFile));
   return {
     root,
     dir,
-    presentedFile: path18.join(dir, `presented-${digest}.md`),
-    approvedFile: path18.join(dir, `approved-${digest}.md`),
-    currentFile: path18.join(dir, "current.md")
+    presentedFile: path19.join(dir, `presented-${digest}.md`),
+    approvedFile: path19.join(dir, `approved-${digest}.md`),
+    currentFile: path19.join(dir, "current.md")
   };
 }
 function ensurePlanDirectory(paths) {
@@ -5094,8 +5295,8 @@ function worktreeGitDir(dotGit, baseDir) {
   if (raw === "") {
     return null;
   }
-  const path19 = isAbsolute(raw) ? raw : join(baseDir, raw);
-  return resolve(path19);
+  const path20 = isAbsolute(raw) ? raw : join(baseDir, raw);
+  return resolve(path20);
 }
 function stripWorktreesSuffix(gitDir) {
   const marker = `${sep}worktrees${sep}`;
@@ -5173,36 +5374,49 @@ function pinEveryChildSession(request) {
   const projectCommonDir = commonDirOf(request.projectDirectory);
   return Promise.all(request.launches.map((launch) => pinChildSession(launch, projectCommonDir, request)));
 }
+function isBatch(launch) {
+  return "packets" in launch;
+}
+function childDirectory(launch, projectDirectory) {
+  return isBatch(launch) ? projectDirectory : launch.worktree;
+}
 var HOST_AGENT = {
   applier: "oso-applier",
   verifier: VERIFIER_AGENT
 };
 async function pinChildSession(launch, projectCommonDir, request) {
-  const rejection = proofRejection(launch) ?? worktreeRejection(launch.worktree, projectCommonDir);
+  const directory = childDirectory(launch, request.projectDirectory);
+  const rejection = launchRejection(launch, projectCommonDir);
   if (rejection !== void 0) {
     return { state: "unpinnable", launch, reason: rejection };
   }
   try {
     const session = await withinBound(
       () => request.transport.create({
-        directory: launch.worktree,
-        title: `${HOST_AGENT[launch.agent]} in ${launch.worktree}`,
+        directory,
+        title: `${HOST_AGENT[launch.agent]} in ${directory}`,
         parentSessionID: request.parentSessionID,
         hostAgent: HOST_AGENT[launch.agent]
       }),
       request.timeoutMs
     );
-    if (session.directory !== launch.worktree) {
+    if (session.directory !== directory) {
       return {
         state: "unpinnable",
         launch,
-        reason: `the host pinned the child session to ${session.directory}, not to ${launch.worktree}`
+        reason: `the host pinned the child session to ${session.directory}, not to ${directory}`
       };
     }
     return { state: "pinned", launch, sessionID: session.id };
   } catch (error) {
     return { state: "unpinnable", launch, reason: `the child session could not be created: ${messageOf2(error)}` };
   }
+}
+function launchRejection(launch, projectCommonDir) {
+  if (isBatch(launch)) {
+    return launch.packets.map((packet) => worktreeRejection(packet.worktree, projectCommonDir)).find((rejection) => rejection !== void 0);
+  }
+  return proofRejection(launch) ?? worktreeRejection(launch.worktree, projectCommonDir);
 }
 function proofRejection({ agent, applierProof }) {
   if (agent === "verifier" || applierProof === void 0) {
@@ -5228,7 +5442,7 @@ async function collectChildReport(child, request) {
   if (child.state === "unpinnable") {
     return {
       outcome: "blocked",
-      worktree: child.launch.worktree,
+      worktree: childDirectory(child.launch, request.projectDirectory),
       agent: child.launch.agent,
       reason: child.reason
     };
@@ -5246,7 +5460,7 @@ async function collectChildReport(child, request) {
     }
     return {
       outcome: "reported",
-      worktree: child.launch.worktree,
+      worktree: childDirectory(child.launch, request.projectDirectory),
       agent: child.launch.agent,
       sessionID: child.sessionID,
       verdict: parseAgentVerdict(raw),
@@ -5257,18 +5471,40 @@ async function collectChildReport(child, request) {
     const failure = `the child turn did not complete: ${messageOf2(error)}`;
     return {
       outcome: "blocked",
-      worktree: child.launch.worktree,
+      worktree: childDirectory(child.launch, request.projectDirectory),
       agent: child.launch.agent,
       sessionID: child.sessionID,
       reason: unstopped === void 0 ? failure : `${failure}; ${unstopped}`
     };
   }
 }
-function promptOf({ prompt, applierProof }) {
+function promptOf(launch) {
+  if (isBatch(launch)) {
+    return [launch.prompt, ...launch.packets.map(packetSection)].join("\n\n");
+  }
+  const { prompt, applierProof } = launch;
   return applierProof === void 0 ? prompt : `${prompt}
 
 ${APPLIER_PROOF_HEADER}
 ${applierProof}`;
+}
+function packetSection({ slice, goal, files, worktree, sliceStart, criteria, decisionBlock, applierProof }) {
+  const body = [
+    `GOAL:
+${goal}`,
+    `EXPECTED FILES:
+${files}`,
+    `WORKTREE PATH: ${worktree}`,
+    `SLICE START: ${sliceStart}`,
+    `CRITERIA:
+${criteria}`,
+    `DECISION BLOCK:
+${decisionBlock}`,
+    `${APPLIER_PROOF_HEADER}
+${applierProof}`
+  ].join("\n\n");
+  return `=== slice packet: ${slice} ===
+${body}`;
 }
 var INTERRUPT_BOUND_MS = 1e4;
 async function interruptChild(sessionID, transport) {
@@ -5895,9 +6131,9 @@ var MARKER_SUFFIX = ".json";
 function markerPath(commonDir, sessionId) {
   return join2(commonDir, `${MARKER_PREFIX}${sessionId}${MARKER_SUFFIX}`);
 }
-function readMarkerFile(path19) {
+function readMarkerFile(path20) {
   try {
-    return normalizeMarker(JSON.parse(readFileSync6(path19, "utf8")));
+    return normalizeMarker(JSON.parse(readFileSync6(path20, "utf8")));
   } catch {
     return null;
   }
@@ -5959,8 +6195,8 @@ function listStale(commonDir) {
     if (isLive(marker)) {
       continue;
     }
-    for (const path19 of marker.worktrees) {
-      orphans.push({ path: path19, sessionId: marker.sessionId });
+    for (const path20 of marker.worktrees) {
+      orphans.push({ path: path20, sessionId: marker.sessionId });
     }
   }
   return orphans;
@@ -6015,11 +6251,11 @@ function sweepStale(commonDir, options = {}) {
       continue;
     }
     let tornDown = true;
-    for (const path19 of marker.worktrees) {
-      if (removeWorktree(commonDir, path19, git)) {
-        reaped.push(path19);
+    for (const path20 of marker.worktrees) {
+      if (removeWorktree(commonDir, path20, git)) {
+        reaped.push(path20);
       } else {
-        left.push(path19);
+        left.push(path20);
         tornDown = false;
       }
     }
@@ -6029,9 +6265,9 @@ function sweepStale(commonDir, options = {}) {
   }
   return { reaped, left };
 }
-function removeWorktree(commonDir, path19, git) {
+function removeWorktree(commonDir, path20, git) {
   const cwd = dirname3(commonDir);
-  if (!runGit(git, ["worktree", "remove", path19], cwd)) {
+  if (!runGit(git, ["worktree", "remove", path20], cwd)) {
     return false;
   }
   runGit(git, ["worktree", "prune"], cwd);
@@ -6054,10 +6290,11 @@ function dropMarkerQuietly(commonDir, sessionId) {
 
 // opencode/plugin/oso/wave-tool.ts
 var CHILD_BOUND_MS = 30 * 60 * 1e3;
+var MAX_WAVE_CHILDREN = 4;
 function waveTool(host) {
   return {
     name: "oso_wave",
-    description: "Runs one oso-code wave: every child is an oso-applier or oso-verifier session pinned to its own git worktree of this project, all children are opened before any of them is prompted, each child's turn blocks until it reports, and its status/verdict line is read back in band. A child that cannot be pinned, cannot run, or outlives its bound comes back blocked with the reason and never as a verdict.",
+    description: "Runs one oso-code wave: every child is an oso-applier or oso-verifier session pinned to its own git worktree of this project (a verifier child may instead carry a batch of up to 3 packets and run pinned to the project directory), a wave holds at most 4 children, all children are opened before any of them is prompted, each child's turn blocks until it reports, and its status/verdict line is read back in band. A child that cannot be pinned, cannot run, or outlives its bound comes back blocked with the reason and never as a verdict.",
     input: {
       type: "object",
       properties: {
@@ -6073,9 +6310,27 @@ function waveTool(host) {
               applier_proof: {
                 type: "string",
                 description: "The applier's proof, scan, and decisions_used report blocks for the slice this child verifies, verbatim and alone \u2014 a verifier child's field, which an applier child offered it comes back blocked for."
+              },
+              packets: {
+                type: "array",
+                description: "A verifier child's batch: up to 3 slice packets, in place of worktree and applier_proof. The child runs pinned to the project directory and each packet's worktree and applier_proof reach it.",
+                items: {
+                  type: "object",
+                  properties: {
+                    slice: { type: "string", description: "The slice id, unique within the batch." },
+                    goal: { type: "string", description: "The slice's goal, verbatim." },
+                    files: { type: "string", description: "The slice's expected files, verbatim." },
+                    worktree: { type: "string", description: "Absolute path of the slice's git worktree." },
+                    slice_start: { type: "string", description: "The ref the slice's diff is judged against." },
+                    criteria: { type: "string", description: "The slice's verify criteria, verbatim." },
+                    decision_block: { type: "string", description: "The ledger decisions relevant to the slice, verbatim." },
+                    applier_proof: { type: "string", description: "The slice's applier proof, scan, and decisions_used blocks, verbatim and alone." }
+                  },
+                  required: ["slice", "goal", "files", "worktree", "slice_start", "criteria", "decision_block", "applier_proof"]
+                }
               }
             },
-            required: ["worktree", "agent", "prompt"]
+            required: ["agent", "prompt"]
           }
         }
       },
@@ -6106,11 +6361,17 @@ function parseLaunches(args) {
   if (!Array.isArray(children) || children.length === 0) {
     throw new Error("oso_wave needs a children array carrying at least one child");
   }
+  if (children.length > MAX_WAVE_CHILDREN) {
+    throw new Error(`oso_wave runs at most ${MAX_WAVE_CHILDREN} children per call, and this call carries ${children.length}`);
+  }
   return children.map(parseLaunch);
 }
 function parseLaunch(child, index) {
   const record = typeof child === "object" && child !== null ? child : {};
-  const { worktree, agent, prompt, applier_proof: applierProof } = record;
+  const { worktree, agent, prompt, applier_proof: applierProof, packets } = record;
+  if (packets !== void 0) {
+    return parseBatchLaunch(record, index);
+  }
   if (typeof worktree !== "string" || worktree === "") {
     throw new Error(`oso_wave child ${index} needs a worktree path, not ${JSON.stringify(worktree)}`);
   }
@@ -6124,6 +6385,54 @@ function parseLaunch(child, index) {
     throw new Error(`oso_wave child ${index} needs applier_proof as the applier's three report blocks, not ${JSON.stringify(applierProof)}`);
   }
   return { worktree, agent, prompt, applierProof };
+}
+function parseBatchLaunch(record, index) {
+  const { worktree, agent, prompt, applier_proof: applierProof, packets } = record;
+  if (agent !== "verifier") {
+    throw new Error(`oso_wave child ${index} carries packets, which only a verifier child may, not ${JSON.stringify(agent)}`);
+  }
+  if (worktree !== void 0 || applierProof !== void 0) {
+    throw new Error(`oso_wave child ${index} carries packets, so its worktree and applier_proof belong inside each packet`);
+  }
+  if (typeof prompt !== "string" || prompt === "") {
+    throw new Error(`oso_wave child ${index} needs a prompt`);
+  }
+  if (!Array.isArray(packets) || packets.length === 0) {
+    throw new Error(`oso_wave child ${index} needs packets carrying at least one packet`);
+  }
+  if (packets.length > BATCH_MAX_SLICES) {
+    throw new Error(`oso_wave child ${index} carries ${packets.length} packets, and a batch holds at most ${BATCH_MAX_SLICES}`);
+  }
+  const parsed = packets.map((packet, packetIndex) => parsePacket(packet, index, packetIndex));
+  const duplicate = parsed.find((packet, position) => parsed.findIndex((other) => other.slice === packet.slice) !== position);
+  if (duplicate !== void 0) {
+    throw new Error(`oso_wave child ${index} names the slice id ${duplicate.slice} in more than one packet`);
+  }
+  return { agent, prompt, packets: parsed };
+}
+function parsePacket(packet, childIndex, index) {
+  const record = typeof packet === "object" && packet !== null ? packet : {};
+  const { slice, goal, files, worktree, slice_start: sliceStart, criteria, decision_block: decisionBlock, applier_proof: applierProof } = record;
+  const where = `oso_wave child ${childIndex} packet ${index}`;
+  if (typeof slice !== "string" || !isSliceId(slice)) {
+    throw new Error(`${where} needs a slice id matching the slice id rule, not ${JSON.stringify(slice)}`);
+  }
+  return {
+    slice,
+    goal: requiredText(goal, "goal", where),
+    files: requiredText(files, "files", where),
+    worktree: requiredText(worktree, "a worktree path", where),
+    sliceStart: requiredText(sliceStart, "slice_start", where),
+    criteria: requiredText(criteria, "criteria", where),
+    decisionBlock: requiredText(decisionBlock, "decision_block", where),
+    applierProof: requiredText(applierProof, "applier_proof as the applier's three report blocks", where)
+  };
+}
+function requiredText(value, need, where) {
+  if (typeof value !== "string" || value === "") {
+    throw new Error(`${where} needs ${need}, not ${JSON.stringify(value)}`);
+  }
+  return value;
 }
 function isWaveAgent(value) {
   return value === "applier" || value === "verifier";
@@ -6142,15 +6451,18 @@ function renderChild(result) {
   if (result.outcome === "blocked") {
     return `=== ${result.worktree} (${result.agent}) \u2014 blocked: ${result.reason} ===`;
   }
-  return `=== ${result.worktree} (${result.agent}) \u2014 ${verdictSummary(result.verdict)} ===
+  return `=== ${result.worktree} (${result.agent}) \u2014 ${verdictSummary(result)} ===
 ${result.raw}`;
 }
-function verdictSummary(parsed) {
+function verdictSummary({ verdict: parsed, raw }) {
   const lines = [];
   if (parsed.status !== void 0) {
     lines.push(`status: ${parsed.status}`);
   }
-  if (parsed.verdict !== void 0) {
+  const blocks = readSliceBlocks(raw);
+  if (blocks.length > 1) {
+    lines.push(`verdict: ${blocks.map((block) => `${block.slice ?? "unnamed"} ${block.verdict}`).join(", ")}`);
+  } else if (parsed.verdict !== void 0) {
     lines.push(`verdict: ${parsed.verdict}`);
   }
   return lines.length === 0 ? "no verdict line" : lines.join(", ");

@@ -1,6 +1,7 @@
+import { execFileSync } from "node:child_process";
 import type { GateOutcome } from "../hosts/envelope.ts";
 import { ALLOWED } from "../hosts/envelope.ts";
-import { gitVerb, isFedByXargs, isGitCall, isResidueCall, type LexedCommand } from "../shell/lexed-command.ts";
+import { gitVerb, gitVerbAt, isFedByXargs, isGitCall, isResidueCall, type LexedCommand } from "../shell/lexed-command.ts";
 import { lineVerdict, type LexerVerdict } from "../shell/line-verdict.ts";
 import {
   allowedWithResidueCounted,
@@ -15,7 +16,7 @@ import {
   type GateDefinition,
   type GateRequest,
 } from "./preflight.ts";
-import { stateFileFor } from "../state/store.ts";
+import { causeOf, stateFileFor } from "../state/store.ts";
 
 type CommitJudgement = "gated" | "residue";
 
@@ -52,6 +53,54 @@ export function commitGateArmedFor(stateContent: string, session: string): boole
   return holdsMode(stateContent) && foreignOwner(stateContent, session) === undefined;
 }
 
+const WAVE_WINDOW_PREFIX = "wave-";
+const SLICE_BRANCH_FAMILY = "oso";
+const SLICE_BRANCH_SEGMENTS = 3;
+const REPOSITORY_VALUE_OPTIONS = ["-C", "--git-dir", "--work-tree"];
+const DETACHED_HEAD_EXIT = 1;
+
+export type BranchReading =
+  | Readonly<{ kind: "branch"; name: string }>
+  | Readonly<{ kind: "detached" }>
+  | Readonly<{ kind: "failed"; cause: string }>;
+
+function windowSliceOf(stateContent: string): string | undefined {
+  if (!verifyIsGreen(stateContent)) return undefined;
+  if (!stateValue(stateContent, "active_slice").startsWith(WAVE_WINDOW_PREFIX)) return undefined;
+  const named = stateValue(stateContent, "green_slice");
+  return named === "" ? undefined : named;
+}
+
+export function otherSliceBranchRefusal(stateContent: string, readBranch: () => BranchReading): string | undefined {
+  const window = windowSliceOf(stateContent);
+  if (window === undefined) return undefined;
+  const reading = readBranch();
+  if (reading.kind === "detached") return undefined;
+  if (reading.kind === "failed") {
+    return `oso-code: the green window names slice ${window}, but the committing branch could not be read (${reading.cause}), so the commit is refused.`;
+  }
+  const segments = reading.name.split("/");
+  if (segments.length !== SLICE_BRANCH_SEGMENTS || segments[0] !== SLICE_BRANCH_FAMILY) return undefined;
+  if (segments[2] === window) return undefined;
+  return `oso-code: the green window names slice ${window}, so a commit from branch ${reading.name} is refused. Commit from the branch of slice ${window}, or wait for that window to close.`;
+}
+
+export function currentBranchOf(workingDirectory: string, repositoryOptions: readonly string[] = []): BranchReading {
+  try {
+    const name = execFileSync("git", [...repositoryOptions, "symbolic-ref", "--short", "-q", "HEAD"], {
+      cwd: workingDirectory,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+    }).trim();
+    return name === "" ? { kind: "detached" } : { kind: "branch", name };
+  } catch (error) {
+    if ((error as { status?: unknown }).status === DETACHED_HEAD_EXIT) return { kind: "detached" };
+    const stderr = (error as { stderr?: unknown }).stderr;
+    const reported = typeof stderr === "string" ? stderr.trim().replace(/\s+/g, " ") : "";
+    return { kind: "failed", cause: reported === "" ? causeOf(error) : reported };
+  }
+}
+
 function judgeCommit({ envelope }: GateRequest): GateOutcome {
   const session = hookSessionId(envelope);
   if (session === "") return payloadUnparseable();
@@ -62,9 +111,13 @@ function judgeCommit({ envelope }: GateRequest): GateOutcome {
   if (state.kind === "unusable") return deniedForUnusableState("commit", stateFile, session);
   if (!commitGateArmedFor(state.content, session)) return ALLOWED;
 
-  const verdict = lineVerdict<CommitJudgement>(envelope.commandLine, judgeCommitLine);
+  const repositoryOptions: Array<readonly string[]> = [];
+  const verdict = lineVerdict<CommitJudgement>(envelope.commandLine, (command, soFar) => {
+    if (isGatedGitCall(command)) repositoryOptions.push(repositoryOptionsOf(command));
+    return judgeCommitLine(command, soFar);
+  });
   if (verdict === "clear") return ALLOWED;
-  if (verifyIsGreen(state.content)) return ALLOWED;
+  if (verifyIsGreen(state.content)) return windowBindingOutcome(state.content, { repositoryOptions, cwd: envelope.cwd }, session, envelope.commandLine);
   if (verdict === "residue" || verdict === "unread") {
     return allowedWithResidueCounted(session, envelope.commandLine);
   }
@@ -74,6 +127,29 @@ function judgeCommit({ envelope }: GateRequest): GateOutcome {
     event: "commit-denied",
     session,
     detail: envelope.commandLine,
+  });
+}
+
+function windowBindingOutcome(
+  stateContent: string,
+  invocations: Readonly<{ repositoryOptions: readonly (readonly string[])[]; cwd: string }>,
+  session: string,
+  commandLine: string,
+): GateOutcome {
+  for (const options of invocations.repositoryOptions) {
+    const message = otherSliceBranchRefusal(stateContent, () => currentBranchOf(invocations.cwd, options));
+    if (message !== undefined) return denied({ gate: "commit", message, event: "commit-denied", session, detail: commandLine });
+  }
+  return ALLOWED;
+}
+
+function repositoryOptionsOf(command: LexedCommand): readonly string[] {
+  const { at } = gitVerbAt(command);
+  const options = command.tokens.slice(1, at);
+  return options.flatMap((token, position) => {
+    if (REPOSITORY_VALUE_OPTIONS.some((option) => token.startsWith(`${option}=`))) return [token];
+    if (REPOSITORY_VALUE_OPTIONS.includes(token)) return [token, options[position + 1] ?? ""];
+    return [];
   });
 }
 

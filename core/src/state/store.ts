@@ -230,7 +230,8 @@ export function writeStatePairs(
   const read = readStateFile(stateFile);
   if (read.kind === "unreadable") throw new StateFileUnreadableError(stateFile, read.cause);
   const existing = read.kind === "ok" ? read.content : "";
-  let lines = parseStateLines(existing).filter((line) => !removedKeys.includes(line.key));
+  const staleKeys = pairsRewriteGreen(pairs) ? [...removedKeys, "green_slice"] : removedKeys;
+  let lines = parseStateLines(existing).filter((line) => !staleKeys.includes(line.key));
   for (const pair of [...pairs, `session=${ownerSession}`]) {
     const [key, value] = splitPair(pair);
     lines = lines.filter((line) => line.key !== key);
@@ -239,6 +240,11 @@ export function writeStatePairs(
   const content = serializeStateLines(lines);
   renameSync(createTempFile(directory, content), stateFile);
   return content;
+}
+
+function pairsRewriteGreen(pairs: readonly string[]): boolean {
+  const keys = pairs.map((pair) => splitPair(pair)[0]);
+  return keys.includes("verify_green") && !keys.includes("green_slice");
 }
 
 export function writeStateValues(cwd: string, sessionId: string, pairs: readonly string[]): void {

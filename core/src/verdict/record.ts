@@ -30,11 +30,16 @@ export type VerdictRecord = Readonly<{
   verdict: RecordedVerdict;
   verdict_shape: VerdictShape;
   escalated: boolean;
+  batch?: number;
 }>;
 
 export const SLICE_MARKS = ["diagnosed", "escalated", "empty-result"] as const;
 
-const MARKER_KINDS = ["arm", ...SLICE_MARKS] as const;
+export const RISK_HIGH_DISCARDED = "risk-high";
+
+export const BATCH_BLOCKED = "batch-blocked";
+
+const MARKER_KINDS = ["arm", RISK_HIGH_DISCARDED, BATCH_BLOCKED, ...SLICE_MARKS] as const;
 
 export type Marker = Readonly<{
   kind: (typeof MARKER_KINDS)[number];
@@ -42,6 +47,7 @@ export type Marker = Readonly<{
   session: string;
   change: string | null;
   time: string;
+  wave?: string;
 }>;
 
 export type VerdictLogEntry = VerdictRecord | Marker;
@@ -57,7 +63,7 @@ export function verdictsFileFor(stateFile: string): string {
 }
 
 export function appendVerdict(verdictsFile: string, capture: VerdictCapture): boolean {
-  return appendEntry(verdictsFile, capture.session, () => {
+  return appendJsonLine<VerdictRecord>(verdictsFile, capture.session, () => {
     const arming = newestArmingOf(readVerdicts(verdictsFile).entries, capture.slice);
     return {
       time: isoTimestamp(),
@@ -71,17 +77,19 @@ export function appendVerdict(verdictsFile: string, capture: VerdictCapture): bo
       verdict: capture.verdict,
       verdict_shape: capture.verdict_shape,
       escalated: arming.some((entry) => isMarkerOf("escalated", entry)),
+      ...(capture.batch === undefined ? {} : { batch: capture.batch }),
     };
   });
 }
 
 export function appendMarker(verdictsFile: string, marker: MarkerCapture): boolean {
-  return appendEntry(verdictsFile, marker.session, () => ({
+  return appendJsonLine<Marker>(verdictsFile, marker.session, () => ({
     kind: marker.kind,
     slice: marker.slice,
     session: marker.session,
     change: marker.change,
     time: isoTimestamp(),
+    ...(marker.wave === undefined ? {} : { wave: marker.wave }),
   }));
 }
 
@@ -119,30 +127,33 @@ export function isVerifierRecord(entry: VerdictLogEntry): entry is VerdictRecord
 
 type Armings = Readonly<{
   everyArming: VerdictLogEntry[][];
+  armMarkers: Marker[];
   newestArmingOfSlice: ReadonlyMap<string, VerdictLogEntry[]>;
 }>;
 
 export function armingsOf(entries: readonly VerdictLogEntry[]): Armings {
   const everyArming: VerdictLogEntry[][] = [];
+  const armMarkers: Marker[] = [];
   const newestArmingOfSlice = new Map<string, VerdictLogEntry[]>();
   for (const entry of entries) {
     if (isMarkerOf("arm", entry)) {
       const arming: VerdictLogEntry[] = [];
       everyArming.push(arming);
+      armMarkers.push(entry);
       newestArmingOfSlice.set(entry.slice, arming);
       continue;
     }
     if (entry.slice !== null) newestArmingOfSlice.get(entry.slice)?.push(entry);
   }
-  return { everyArming, newestArmingOfSlice };
+  return { everyArming, armMarkers, newestArmingOfSlice };
 }
 
-function appendEntry(verdictsFile: string, session: string, entryOf: () => VerdictLogEntry): boolean {
+export function appendJsonLine<Line extends object>(jsonlFile: string, session: string, lineOf: () => Line): boolean {
   try {
-    const line = `${JSON.stringify(entryOf())}\n`;
+    const line = `${JSON.stringify(lineOf())}\n`;
     withOwnerOnlyUmask(() => {
-      mkdirSync(path.dirname(verdictsFile), { recursive: true });
-      appendFileSync(verdictsFile, line);
+      mkdirSync(path.dirname(jsonlFile), { recursive: true });
+      appendFileSync(jsonlFile, line);
     });
     return true;
   } catch (error) {
@@ -159,20 +170,22 @@ function logEntryOf(line: string): VerdictLogEntry | undefined {
 }
 
 function markerOf(fields: Record<string, unknown>): Marker | undefined {
-  const { slice, session, change, time } = fields;
+  const { slice, session, change, time, wave } = fields;
   const kind = MARKER_KINDS.find((value) => value === fields["kind"]);
   if (kind === undefined || !isText(slice) || !isText(session) || !isTextOrNull(change) || !isText(time)) return undefined;
-  return { kind, slice, session, change, time };
+  if (wave !== undefined && !isText(wave)) return undefined;
+  return { kind, slice, session, change, time, ...(wave === undefined ? {} : { wave }) };
 }
 
 function verdictRecordOf(fields: Record<string, unknown>): VerdictRecord | undefined {
-  const { time, host, session, change, slice, attempt, role, model, verdict, verdict_shape, escalated } = fields;
+  const { time, host, session, change, slice, attempt, role, model, verdict, verdict_shape, escalated, batch } = fields;
   if (!isText(time) || !isText(session) || !isTextOrNull(change) || !isTextOrNull(slice) || !isText(role)) return undefined;
   if (!isHostName(host) || typeof attempt !== "number") return undefined;
   if (!isTextOrNull(model) || typeof escalated !== "boolean") return undefined;
   const recorded = RECORDED_VERDICTS.find((value) => value === verdict);
   const shape = VERDICT_SHAPES.find((value) => value === verdict_shape);
   if (recorded === undefined || shape === undefined) return undefined;
+  if (batch !== undefined && typeof batch !== "number") return undefined;
   return {
     time,
     host,
@@ -185,6 +198,7 @@ function verdictRecordOf(fields: Record<string, unknown>): VerdictRecord | undef
     verdict: recorded,
     verdict_shape: shape,
     escalated,
+    ...(batch === undefined ? {} : { batch }),
   };
 }
 

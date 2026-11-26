@@ -37,4 +37,5 @@ export {
 } from "./state/store.ts";
 export { delegationOverdueAtMs, overdueDelegation, type OverdueDelegation } from "./state/watch.ts";
 export { captureVerifierReport, isVerifierAgent } from "./verdict/capture.ts";
-export { parseAgentVerdict, type ParsedAgentVerdict } from "./verdict/grammar.ts";
+export { BATCH_MAX_SLICES } from "./verdict/wave.ts";
+export { isSliceId, parseAgentVerdict, readSliceBlocks, type ParsedAgentVerdict } from "./verdict/grammar.ts";

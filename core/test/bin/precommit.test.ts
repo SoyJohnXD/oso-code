@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
+import { spawnSync } from "node:child_process";
 import path from "node:path";
+import { repositoryIdentityFor, sha256Hex } from "../../src/state/store.ts";
 import { provedSomething } from "../support/proved.ts";
 import {
   repositoryRoot,
@@ -115,5 +117,58 @@ describe("the git pre-commit hook's own boundary", { skip: skipUnlessSpawnable(P
     assert.equal(record["command"], "");
     assert.equal(Object.hasOwn(record, "gate"), false);
     assert.equal(Object.hasOwn(record, "hook_event"), false);
+  });
+
+  describe("a named green window binds the commit to its slice's branch", () => {
+    const NAMED_WINDOW = `mode=plan\nactive_slice=wave-1\nverify_green=true\ngreen_slice=s1\nsession=${SESSION}\n`;
+
+    function runOnBranch(branch: string, state: string): { exit: number; stderr: string } {
+      return withStateSandbox("workspace", (sandbox) => {
+        const repository = sandbox.seedGitRepository("proj");
+        spawnSync("git", ["-C", repository, "checkout", "-q", "-b", branch]);
+        const key = sha256Hex(repositoryIdentityFor(repository));
+        sandbox.seed({ [`.local/state/oso-code/${key}.state`]: state });
+        return sandbox.run(PRE_COMMIT_HOOK, [], { env: HOST_SESSION, cwd: repository });
+      });
+    }
+
+    test("a commit from another slice's branch is refused", () => {
+      const run = runOnBranch("oso/alpha/s2", NAMED_WINDOW);
+      assert.equal(run.exit, 1);
+      assert.match(run.stderr, /names slice s1.*oso\/alpha\/s2/);
+    });
+
+    test("a commit from the named slice's branch goes through", () => {
+      assert.equal(runOnBranch("oso/alpha/s1", NAMED_WINDOW).exit, 0);
+    });
+
+    test("a branch outside the oso family goes through", () => {
+      assert.equal(runOnBranch("main", NAMED_WINDOW).exit, 0);
+    });
+
+    test("a detached HEAD is a named case that goes through", () => {
+      const run = withStateSandbox("workspace", (sandbox) => {
+        const repository = sandbox.seedGitRepository("proj");
+        spawnSync("git", ["-C", repository, "checkout", "-q", "--detach"]);
+        const key = sha256Hex(repositoryIdentityFor(repository));
+        sandbox.seed({ [`.local/state/oso-code/${key}.state`]: NAMED_WINDOW });
+        return sandbox.run(PRE_COMMIT_HOOK, [], { env: HOST_SESSION, cwd: repository });
+      });
+      assert.equal(run.exit, 0);
+    });
+
+    test("a git failure while the window is named refuses the commit with its cause", () => {
+      const run = withStateSandbox("workspace", (sandbox) => {
+        sandbox.seed({ [STATE_FILE]: NAMED_WINDOW });
+        return sandbox.run(PRE_COMMIT_HOOK, [], { env: HOST_SESSION });
+      });
+      assert.equal(run.exit, 1);
+      assert.match(run.stderr, /could not be read \(.*\), so the commit is refused/);
+    });
+
+    test("an unnamed wave window and a sequential green leave every branch free", () => {
+      assert.equal(runOnBranch("oso/alpha/s2", NAMED_WINDOW.replace("green_slice=s1\n", "")).exit, 0);
+      assert.equal(runOnBranch("oso/alpha/s2", NAMED_WINDOW.replace("wave-1", "3")).exit, 0);
+    });
   });
 });

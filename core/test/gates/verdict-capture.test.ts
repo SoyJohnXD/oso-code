@@ -16,6 +16,8 @@ const SESSION = "sess-verdict";
 const VERDICTS = `${REPOSITORY_RUNS_DIR}/verdicts.jsonl`;
 const ATTENDED_SLICE_TWO = `mode=plan\nactive_slice=2\nverify_green=false\nsession=${SESSION}\n`;
 const ARMED_SLICE_TWO = `${JSON.stringify({ kind: "arm", slice: "2", session: SESSION, change: null, time: "2026-09-29T00:00:00Z" })}\n`;
+const WAVES = `${REPOSITORY_RUNS_DIR}/waves.jsonl`;
+const TOKEN_ENTRY = `${JSON.stringify({ kind: "token", wave: "w1", token: "tk1", slices: ["a", "b", "c"], session: SESSION, time: "2026-09-29T00:00:00Z" })}\n`;
 const VERIFIER_META = `projects/proj/${SESSION}/subagents/agent-v1.meta.json`;
 
 function subagentStop(agentType: string, lastMessage: string): string {
@@ -219,5 +221,61 @@ describe("a verifier that delivers its report through SubagentHandback is captur
 
   test("a malformed transcript line is skipped and the handback before it still counts", () => {
     assert.deepEqual(verdictsAfter(transcriptOf(handbackLine("verdict: pass"), "{not json"), ""), PASS_VALID);
+  });
+});
+
+describe("a report under a launch token records one verdict per slice block", () => {
+  const seed = { [STATE_FILE]: ATTENDED_SLICE_TWO, [WAVES]: TOKEN_ENTRY };
+  const summary = (records: Record<string, unknown>[]) =>
+    records.map(({ slice, verdict, verdict_shape, batch, kind }) => ({ slice, verdict, verdict_shape, batch, kind }));
+
+  test("valid blocks land per slice with the batch size, an absent block is malformed and a foreign id is rejected", () => {
+    const report = "token: tk1\nslice: a\nverdict: pass\nslice: b\nverdict: fail\nslice: zzz\nverdict: pass";
+    const { records, events } = capturedAfter(seed, [subagentStop("oso-code:oso-verifier", report)]);
+    assert.deepEqual(summary(records), [
+      { slice: "a", verdict: "pass", verdict_shape: "valid", batch: 3, kind: undefined },
+      { slice: "b", verdict: "fail", verdict_shape: "valid", batch: 3, kind: undefined },
+      { slice: "c", verdict: "none", verdict_shape: "malformed", batch: 3, kind: undefined },
+    ]);
+    assert.equal(events.filter((line) => line.includes('"verdict-block-rejected"')).length, 1);
+  });
+
+  test("a risk: high block leaves a marker and no verdict record for that slice", () => {
+    const report = "token: tk1\nslice: a\nverdict: pass\nrisk: high auth\nslice: b\nverdict: pass\nslice: c\nverdict: pass";
+    const { records } = capturedAfter(seed, [subagentStop("oso-code:oso-verifier", report)]);
+    assert.deepEqual(summary(records), [
+      { slice: "a", verdict: undefined, verdict_shape: undefined, batch: undefined, kind: "risk-high" },
+      { slice: "b", verdict: "pass", verdict_shape: "valid", batch: 3, kind: undefined },
+      { slice: "c", verdict: "pass", verdict_shape: "valid", batch: 3, kind: undefined },
+    ]);
+  });
+
+  test("a solo token keeps a risk: high block as a verdict so the slice can be receipted", () => {
+    const solo = `${JSON.stringify({ kind: "token", wave: "w1", token: "solo", slices: ["a"], session: SESSION, time: "2026-09-29T00:00:00Z" })}\n`;
+    const { records } = capturedAfter({ [STATE_FILE]: ATTENDED_SLICE_TWO, [WAVES]: solo }, [
+      subagentStop("oso-code:oso-verifier", "token: solo\nslice: a\nverdict: pass\nrisk: high auth"),
+    ]);
+    assert.deepEqual(summary(records), [{ slice: "a", verdict: "pass", verdict_shape: "valid", batch: 1, kind: undefined }]);
+  });
+
+  test("a batch-level blocked report records a batch-blocked marker per slice and no verifier record", () => {
+    const { records } = capturedAfter(seed, [subagentStop("oso-code:oso-verifier", "token: tk1\nstatus: blocked\nverdict: blocked")]);
+    assert.deepEqual(
+      summary(records).map(({ slice, verdict, kind }) => [slice, verdict, kind]),
+      [["a", undefined, "batch-blocked"], ["b", undefined, "batch-blocked"], ["c", undefined, "batch-blocked"]],
+    );
+  });
+
+  test("a legacy single-verdict report under a token is malformed for every slice", () => {
+    const { records } = capturedAfter(seed, [subagentStop("oso-code:oso-verifier", "token: tk1\nverdict: pass")]);
+    assert.deepEqual(
+      summary(records).map(({ slice, verdict_shape }) => [slice, verdict_shape]),
+      [["a", "malformed"], ["b", "malformed"], ["c", "malformed"]],
+    );
+  });
+
+  test("an unregistered token records nothing", () => {
+    const { records } = capturedAfter(seed, [subagentStop("oso-code:oso-verifier", "token: nope\nslice: a\nverdict: pass")]);
+    assert.deepEqual(records, []);
   });
 });

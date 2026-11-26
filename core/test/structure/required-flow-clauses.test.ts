@@ -73,6 +73,17 @@ const ROWS: readonly Row[] = [
     ],
   },
   {
+    contract: "the verifier contract carries the batch shape and the applier reports its risk surface",
+    targets: [
+      { files: VERIFIER_CONTRACTS, tokens: ["slice: <id>", "token: <name>", "risk: high <reason>", "up to 3 slice packets"] },
+      { files: contractFiles("oso-applier"), tokens: ["risk-surface:"] },
+    ],
+  },
+  {
+    contract: "the verifier contract gives each batched slice its own verdict",
+    targets: [{ files: VERIFIER_CONTRACTS, tokens: ["verify a BATCH of up to 3 implemented slices and give each slice its own verdict"] }],
+  },
+  {
     contract: "every launch carries the model the profile names and the milestone names it",
     targets: [
       { files: FLOWS_THAT_LAUNCH_DELEGATES, tokens: ["the model the profile names for its role", "named in the Launching milestone"] },
@@ -80,11 +91,21 @@ const ROWS: readonly Row[] = [
     ],
   },
   {
-    contract: "work is routed by size and every unit is verified by a fresh verifier",
+    contract: "work is routed by size and every slice gets its own verifier verdict, fresh and solo where the debug flow or high risk asks for it",
     targets: [
       { files: [REPORTING], tokens: ["one non-trivial file", "mechanical edit of any breadth", "applier agent"] },
-      { files: PLAN_AND_DEBUG_FLOWS, tokens: ["threshold defined at `_shared/reporting.md`", "FRESH verifier"] },
+      { files: PLAN_AND_DEBUG_FLOWS, tokens: ["threshold defined at `_shared/reporting.md`"] },
+      { files: PLAN_FLOWS, tokens: ["its OWN verifier verdict", "fresh solo verifier"] },
+      { files: DEBUG_FLOWS, tokens: ["FRESH verifier"] },
     ],
+  },
+  {
+    contract: "plan slices state a risk and the execution mode is chosen automatically and overridable at approval",
+    targets: [{ files: PLAN_FLOWS, tokens: ["**Risk**", "AUTOMATIC", "doubt is high"] }],
+  },
+  {
+    contract: "the wave loop registers launch tokens, names the green slice and arms the wave with its slices",
+    targets: [{ files: [PARALLEL], tokens: ["launch-token", "green_slice", "wave start"] }],
   },
   {
     contract: "plan, quick and debug release the gates with oso-state close",
@@ -137,4 +158,14 @@ describe("the row matcher reports what it cannot find", () => {
     assert.deepEqual(problemsOf(targets, synthetic("alpha only")), ['synthetic.md lacks "beta"']);
     assert.deepEqual(problemsOf(targets, synthetic("alpha and beta")), []);
   });
+});
+
+describe("the verifier contract never calls a batch independent", () => {
+  for (const file of VERIFIER_CONTRACTS) {
+    test(file, () => {
+      const opening = readFromTree(file).split("\n").find((line) => line.includes("BATCH")) ?? "";
+      const afterBatch = opening.slice(opening.indexOf("BATCH"));
+      assert.doesNotMatch(afterBatch.split(". ")[0] ?? "", /independent/i);
+    });
+  }
 });

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // core/src/state/cli.ts
 import { mkdirSync as mkdirSync5, readFileSync as readFileSync4 } from "node:fs";
-import path8 from "node:path";
+import path9 from "node:path";
 
 // core/src/scan/changed-lines.ts
 import { spawnSync } from "node:child_process";
@@ -916,6 +916,16 @@ function asJsLiteral(character) {
   return `\\u{${(character.codePointAt(0) ?? 0).toString(16)}}`;
 }
 
+// core/src/verdict/grammar.ts
+var RECORDED_VERDICTS = ["pass", "fail", "blocked", "none"];
+var VERDICT_SHAPES = ["valid", "malformed"];
+var ID_SHAPE = "[A-Za-z0-9][A-Za-z0-9._-]*";
+var SLICE_ID = new RegExp(`^${ID_SHAPE}$`);
+function isSliceId(value) {
+  return SLICE_ID.test(value);
+}
+var TOKEN_LINE = new RegExp(`^\\s*token\\s*:\\s*(${ID_SHAPE})\\s*$`, "i");
+
 // core/src/verdict/record.ts
 import { appendFileSync as appendFileSync2, mkdirSync as mkdirSync2 } from "node:fs";
 import path4 from "node:path";
@@ -1087,7 +1097,8 @@ function writeStatePairs(stateFile, pairs, ownerSession, removedKeys = []) {
   const read = readStateFile(stateFile);
   if (read.kind === "unreadable") throw new StateFileUnreadableError(stateFile, read.cause);
   const existing = read.kind === "ok" ? read.content : "";
-  let lines = parseStateLines(existing).filter((line) => !removedKeys.includes(line.key));
+  const staleKeys = pairsRewriteGreen(pairs) ? [...removedKeys, "green_slice"] : removedKeys;
+  let lines = parseStateLines(existing).filter((line) => !staleKeys.includes(line.key));
   for (const pair of [...pairs, `session=${ownerSession}`]) {
     const [key, value] = splitPair(pair);
     lines = lines.filter((line) => line.key !== key);
@@ -1096,6 +1107,10 @@ function writeStatePairs(stateFile, pairs, ownerSession, removedKeys = []) {
   const content = serializeStateLines(lines);
   renameSync(createTempFile(directory, content), stateFile);
   return content;
+}
+function pairsRewriteGreen(pairs) {
+  const keys = pairs.map((pair) => splitPair(pair)[0]);
+  return keys.includes("verify_green") && !keys.includes("green_slice");
 }
 function logSet(sessionId, pairs) {
   logEvent({ event: `set:${pairs.join(" ")}`, session: sessionId });
@@ -1366,26 +1381,25 @@ function isErrnoException(error) {
   return error instanceof Error && "code" in error;
 }
 
-// core/src/verdict/grammar.ts
-var RECORDED_VERDICTS = ["pass", "fail", "blocked", "none"];
-var VERDICT_SHAPES = ["valid", "malformed"];
-
 // core/src/verdict/record.ts
 var VERIFIER_ROLE = "verifier";
 var TELEMETRY_WRITE_FAILED = "telemetry-write-failed";
 var VERIFY_GREEN_UNRECEIPTED = "verify-green-unreceipted";
 var SLICE_MARKS = ["diagnosed", "escalated", "empty-result"];
-var MARKER_KINDS = ["arm", ...SLICE_MARKS];
+var RISK_HIGH_DISCARDED = "risk-high";
+var BATCH_BLOCKED = "batch-blocked";
+var MARKER_KINDS = ["arm", RISK_HIGH_DISCARDED, BATCH_BLOCKED, ...SLICE_MARKS];
 function verdictsFileFor(stateFile) {
   return path4.join(runsDirectoryOf(stateFile), "verdicts.jsonl");
 }
 function appendMarker(verdictsFile, marker) {
-  return appendEntry(verdictsFile, marker.session, () => ({
+  return appendJsonLine(verdictsFile, marker.session, () => ({
     kind: marker.kind,
     slice: marker.slice,
     session: marker.session,
     change: marker.change,
-    time: isoTimestamp()
+    time: isoTimestamp(),
+    ...marker.wave === void 0 ? {} : { wave: marker.wave }
   }));
 }
 function newlyArmedSliceOf(preWriteSlice, written) {
@@ -1416,25 +1430,27 @@ function isVerifierRecord(entry) {
 }
 function armingsOf(entries) {
   const everyArming = [];
+  const armMarkers = [];
   const newestArmingOfSlice = /* @__PURE__ */ new Map();
   for (const entry of entries) {
     if (isMarkerOf("arm", entry)) {
       const arming = [];
       everyArming.push(arming);
+      armMarkers.push(entry);
       newestArmingOfSlice.set(entry.slice, arming);
       continue;
     }
     if (entry.slice !== null) newestArmingOfSlice.get(entry.slice)?.push(entry);
   }
-  return { everyArming, newestArmingOfSlice };
+  return { everyArming, armMarkers, newestArmingOfSlice };
 }
-function appendEntry(verdictsFile, session, entryOf) {
+function appendJsonLine(jsonlFile, session, lineOf) {
   try {
-    const line = `${JSON.stringify(entryOf())}
+    const line = `${JSON.stringify(lineOf())}
 `;
     withOwnerOnlyUmask(() => {
-      mkdirSync2(path4.dirname(verdictsFile), { recursive: true });
-      appendFileSync2(verdictsFile, line);
+      mkdirSync2(path4.dirname(jsonlFile), { recursive: true });
+      appendFileSync2(jsonlFile, line);
     });
     return true;
   } catch (error) {
@@ -1449,19 +1465,21 @@ function logEntryOf(line) {
   return verdictRecordOf(parsed);
 }
 function markerOf(fields) {
-  const { slice, session, change, time } = fields;
+  const { slice, session, change, time, wave } = fields;
   const kind = MARKER_KINDS.find((value) => value === fields["kind"]);
   if (kind === void 0 || !isText(slice) || !isText(session) || !isTextOrNull(change) || !isText(time)) return void 0;
-  return { kind, slice, session, change, time };
+  if (wave !== void 0 && !isText(wave)) return void 0;
+  return { kind, slice, session, change, time, ...wave === void 0 ? {} : { wave } };
 }
 function verdictRecordOf(fields) {
-  const { time, host, session, change, slice, attempt, role, model, verdict, verdict_shape, escalated } = fields;
+  const { time, host, session, change, slice, attempt, role, model, verdict, verdict_shape, escalated, batch } = fields;
   if (!isText(time) || !isText(session) || !isTextOrNull(change) || !isTextOrNull(slice) || !isText(role)) return void 0;
   if (!isHostName(host) || typeof attempt !== "number") return void 0;
   if (!isTextOrNull(model) || typeof escalated !== "boolean") return void 0;
   const recorded = RECORDED_VERDICTS.find((value) => value === verdict);
   const shape = VERDICT_SHAPES.find((value) => value === verdict_shape);
   if (recorded === void 0 || shape === void 0) return void 0;
+  if (batch !== void 0 && typeof batch !== "number") return void 0;
   return {
     time,
     host,
@@ -1473,7 +1491,8 @@ function verdictRecordOf(fields) {
     model,
     verdict: recorded,
     verdict_shape: shape,
-    escalated
+    escalated,
+    ...batch === void 0 ? {} : { batch }
   };
 }
 var HOST_NAMES = { claude: true, opencode: true };
@@ -1487,15 +1506,107 @@ function isTextOrNull(value) {
   return value === null || typeof value === "string";
 }
 
+// core/src/verdict/wave.ts
+import path5 from "node:path";
+var SLICE_RISKS = ["low", "high"];
+var BATCH_MAX_SLICES = 3;
+function isBatchSize(sliceCount) {
+  return sliceCount >= 2;
+}
+function wavesFileFor(stateFile) {
+  return path5.join(runsDirectoryOf(stateFile), "waves.jsonl");
+}
+function appendWave(wavesFile, wave) {
+  return appendJsonLine(wavesFile, wave.session, () => ({ kind: "wave", ...wave, time: isoTimestamp() }));
+}
+function appendLaunchToken(wavesFile, token) {
+  return appendJsonLine(wavesFile, token.session, () => ({ kind: "token", ...token, time: isoTimestamp() }));
+}
+function readWaveLog(wavesFile) {
+  const entries = (readFileIfPresent(wavesFile) ?? "").split("\n").filter((line) => line !== "").flatMap((line) => {
+    const entry = jsonObjectOf(line);
+    return entry === void 0 ? [] : [entry];
+  });
+  return {
+    waves: entries.flatMap((entry) => waveOf(entry) ?? []),
+    tokens: entries.flatMap((entry) => tokenOf(entry) ?? [])
+  };
+}
+function newestWaveNamed(log, wave) {
+  return log.waves.filter((record) => record.wave === wave).at(-1);
+}
+function newestWave(log) {
+  return log.waves.at(-1);
+}
+function launchTokenRefusal(log, wave, token, slices) {
+  if (slices.length === 0) return "a token lists at least one slice";
+  if (log.tokens.some((registered) => registered.wave === wave.wave && registered.token === token)) {
+    return `token ${token} is already registered`;
+  }
+  const repeated = slices.find((slice, index) => slices.indexOf(slice) !== index);
+  if (repeated !== void 0) return `slice ${repeated} is listed twice`;
+  const unknown = slices.find((slice) => !wave.slices.some((member) => member.slice === slice));
+  if (unknown !== void 0) return `slice ${unknown} is not in ${wave.wave}`;
+  if (slices.length === 1) return void 0;
+  if (slices.length > BATCH_MAX_SLICES) return `a batch holds at most ${BATCH_MAX_SLICES} slices, not ${slices.length}`;
+  const high = wave.slices.find((member) => member.risk === "high" && slices.includes(member.slice));
+  return high === void 0 ? void 0 : `slice ${high.slice} is high risk and is verified solo`;
+}
+function waveOf(fields) {
+  const { kind, wave, slices, session, change, time } = fields;
+  if (kind !== "wave" || typeof wave !== "string" || typeof session !== "string" || typeof time !== "string") return void 0;
+  if (change !== null && typeof change !== "string") return void 0;
+  if (!Array.isArray(slices)) return void 0;
+  const members = slices.flatMap((member) => recordedWaveSliceOf(member) ?? []);
+  return members.length === slices.length ? { kind, wave, slices: members, session, change, time } : void 0;
+}
+function recordedWaveSliceOf(member) {
+  if (typeof member !== "object" || member === null) return void 0;
+  const { slice, risk } = member;
+  const known = SLICE_RISKS.find((value) => value === risk);
+  return typeof slice === "string" && known !== void 0 ? { slice, risk: known } : void 0;
+}
+function tokenOf(fields) {
+  const { kind, wave, token, slices, session, time } = fields;
+  if (kind !== "token" || typeof wave !== "string" || typeof token !== "string") return void 0;
+  if (typeof session !== "string" || typeof time !== "string") return void 0;
+  if (!Array.isArray(slices) || !slices.every((slice) => typeof slice === "string")) return void 0;
+  return { kind, wave, token, slices, session, time };
+}
+
 // core/src/verdict/receipt.ts
 var WAVE_SLICE_PREFIX = "wave-";
-function greenReceiptOf(verdictsFile, preWriteSlice, written) {
+function greenReceiptOf(files, preWriteSlice, written) {
   if (written.get("verify_green") !== "true" || preWriteSlice === "none") return { kind: "unguarded" };
+  const named = written.get("green_slice");
+  if (named !== void 0 && namesAWindowOf(preWriteSlice, written)) return namedWindowReceipt(files, preWriteSlice, named);
   if (keepsTheWaveArmed(preWriteSlice, written)) return { kind: "unreceipted", slice: preWriteSlice };
-  const newest = verifierRecordsSinceArm(readVerdicts(verdictsFile).entries, preWriteSlice).at(-1);
+  const newest = verifierRecordsSinceArm(readVerdicts(files.verdictsFile).entries, preWriteSlice).at(-1);
   if (newest === void 0) return { kind: "unreceipted", slice: preWriteSlice };
   if (newest.verdict === "pass" && newest.verdict_shape === "valid") return { kind: "receipted" };
   return { kind: "refused", reason: refusalReason(preWriteSlice, newest) };
+}
+function namedWindowReceipt(files, wave, slice) {
+  const started = newestWaveNamed(readWaveLog(files.wavesFile), wave);
+  if (started === void 0 || !started.slices.some((member) => member.slice === slice)) {
+    return { kind: "refused", reason: `slice ${slice} is not in the started ${wave}` };
+  }
+  const arming = newestArmingOf(readVerdicts(files.verdictsFile).entries, slice);
+  const newest = arming.filter(isVerifierRecord).at(-1);
+  if (newest === void 0) {
+    return { kind: "refused", reason: `slice ${slice} has no verifier record since its arm` };
+  }
+  if (newest.verdict !== "pass" || newest.verdict_shape !== "valid") {
+    return { kind: "refused", reason: refusalReason(slice, newest) };
+  }
+  if (arming.slice(arming.indexOf(newest) + 1).some((entry) => isMarkerOf(RISK_HIGH_DISCARDED, entry))) {
+    return { kind: "refused", reason: `slice ${slice} carries a ${RISK_HIGH_DISCARDED} marker newer than its pass and is verified solo` };
+  }
+  return { kind: "receipted" };
+}
+function namesAWindowOf(preWriteSlice, written) {
+  const slice = written.get("active_slice") ?? preWriteSlice;
+  return preWriteSlice.startsWith(WAVE_SLICE_PREFIX) && slice === preWriteSlice;
 }
 function keepsTheWaveArmed(preWriteSlice, written) {
   return preWriteSlice.startsWith(WAVE_SLICE_PREFIX) && written.get("active_slice") === preWriteSlice;
@@ -1507,16 +1618,26 @@ function refusalReason(slice, record) {
 
 // core/src/verdict/report.ts
 function verdictMetrics(log, greensRead, armedSlice) {
-  const { everyArming } = armingsOf(log.entries);
+  const { everyArming, armMarkers } = armingsOf(log.entries);
   const roundsOfEachSlice = everyArming.map((arming) => arming.filter(isVerifierRecord)).filter((rounds) => rounds.length > 0);
   const verifierRecords = roundsOfEachSlice.flat();
   const firstFailSlices = roundsOfEachSlice.filter((rounds) => rounds[0]?.verdict === "fail").length;
+  const reds = greensRead.kind === "read" ? greensRead.integrationReds : null;
+  const armed = armedOutcomesOf(armMarkers, everyArming, reds ?? []);
+  const batched = classMetrics(armed.filter((outcome) => outcome.batched));
+  const solo = classMetrics(armed.filter((outcome) => !outcome.batched));
+  const escapes = escapesOf(armed, greensRead);
   return {
     active_slice: activeSliceOf(log.entries, armedSlice),
+    wave_slices: waveSlicesOf(log.entries, armMarkers, armedSlice),
     slices: roundsOfEachSlice.length,
     first_fail_slices: firstFailSlices,
     first_fail_rate_percent: roundsOfEachSlice.length === 0 ? null : oneDecimal(firstFailSlices * 100 / roundsOfEachSlice.length),
     rounds_per_slice: roundsSummary(roundsOfEachSlice.map((rounds) => rounds.length)),
+    batched,
+    solo,
+    escapes,
+    recommendation: recommendationOf(batched, solo, escapes),
     escalated_slices: everyArming.filter((arming) => arming.some((entry) => isMarkerOf("escalated", entry))).length,
     verdicts_by_model: verdictsByModel(verifierRecords),
     malformed: verifierRecords.filter((record) => record.verdict_shape === "malformed").length,
@@ -1530,6 +1651,13 @@ function unreceiptedGreensIn(eventsText) {
     return event === VERIFY_GREEN_UNRECEIPTED && typeof session === "string" ? [{ session }] : [];
   });
 }
+function integrationRedsIn(eventsText) {
+  return eventsText.split("\n").flatMap((line) => {
+    const { session, event, ts } = jsonObjectOf(line) ?? {};
+    const time = typeof ts === "string" ? Date.parse(ts) : Number.NaN;
+    return event === INTEGRATION_RED && typeof session === "string" && !Number.isNaN(time) ? [{ session, time }] : [];
+  });
+}
 function renderReportTable(metrics) {
   const rows = [
     ["active slice", [activeSliceText(metrics)]],
@@ -1540,11 +1668,101 @@ function renderReportTable(metrics) {
     ["verdicts by model", modelRowsText(metrics.verdicts_by_model)],
     ["malformed reports", [String(metrics.malformed)]],
     ["skipped lines", [String(metrics.skipped_lines)]],
-    ["unreceipted greens", [unreceiptedGreensText(metrics)]]
+    ["unreceipted greens", [unreceiptedGreensText(metrics)]],
+    ...waveSliceRows(metrics),
+    ["batched slices", [classText(metrics.batched)]],
+    ["solo slices", [classText(metrics.solo)]],
+    ["escapes", [escapesText(metrics.escapes)]],
+    ["recommendation", [metrics.recommendation]]
   ];
   const labelWidth = Math.max(...rows.map(([label]) => label.length)) + 2;
   return rows.flatMap(([label, values]) => values.map((value, index) => `${(index === 0 ? label : "").padEnd(labelWidth)}${value}`)).map((line) => `${line}
 `).join("");
+}
+var INTEGRATION_RED = "integration-red";
+var MIN_BATCHED_SLICES = 20;
+var RARE_ESCAPE_PERCENT = 10;
+function armedOutcomesOf(armMarkers, everyArming, reds) {
+  const waveStarts = waveStartsOf(armMarkers);
+  return everyArming.flatMap((arming, index) => {
+    const rounds = arming.filter(isVerifierRecord);
+    const first = rounds[0];
+    if (first === void 0) return [];
+    const marker = armMarkers[index];
+    const wave = marker.wave === void 0 ? null : waveKey(marker.session, marker.wave);
+    return [
+      {
+        batched: isBatchSize(first.batch ?? 1),
+        rounds: rounds.length,
+        firstVerdict: first.verdict,
+        wave,
+        inRedWave: wave !== null && reds.some((red) => waveOfRed(waveStarts, red) === wave)
+      }
+    ];
+  });
+}
+var WAVE_KEY_SEPARATOR = "\0";
+function waveKey(session, wave) {
+  return `${session}${WAVE_KEY_SEPARATOR}${wave}`;
+}
+function waveStartsOf(armMarkers) {
+  const starts = /* @__PURE__ */ new Map();
+  for (const marker of armMarkers) {
+    if (marker.wave === void 0) continue;
+    const key = waveKey(marker.session, marker.wave);
+    starts.set(key, Math.min(starts.get(key) ?? Number.POSITIVE_INFINITY, Date.parse(marker.time)));
+  }
+  return starts;
+}
+function waveOfRed(waveStarts, red) {
+  const candidates = [...waveStarts].filter(
+    ([key, start]) => key.startsWith(`${red.session}${WAVE_KEY_SEPARATOR}`) && start <= red.time
+  );
+  return candidates.sort(([, left], [, right]) => right - left)[0]?.[0];
+}
+function escapedFirstPass(outcome) {
+  return outcome.inRedWave && outcome.firstVerdict === "pass";
+}
+function classMetrics(outcomes) {
+  const firstFails = outcomes.filter((outcome) => outcome.firstVerdict === "fail").length;
+  const inWave = outcomes.filter((outcome) => outcome.wave !== null);
+  const escaped = inWave.filter(escapedFirstPass).length;
+  return {
+    slices: outcomes.length,
+    first_fail_slices: firstFails,
+    first_fail_rate_percent: outcomes.length === 0 ? null : oneDecimal(firstFails * 100 / outcomes.length),
+    rounds_per_slice: roundsSummary(outcomes.map((outcome) => outcome.rounds)),
+    wave_slices: inWave.length,
+    escaped_slices: escaped,
+    escape_rate_percent: inWave.length === 0 ? null : oneDecimal(escaped * 100 / inWave.length)
+  };
+}
+function escapesOf(armed, greensRead) {
+  if (greensRead.kind === "omitted") return { omitted: greensRead.reason };
+  const escaped = armed.filter((outcome) => outcome.batched && escapedFirstPass(outcome));
+  return { waves: new Set(escaped.map((outcome) => outcome.wave)).size, batched_slices: escaped.length };
+}
+function recommendationOf(batched, solo, escapes) {
+  if (batched.slices < MIN_BATCHED_SLICES) {
+    return `none \u2014 sample too small: ${batched.slices} of ${MIN_BATCHED_SLICES} batched slices needed`;
+  }
+  if ("omitted" in escapes) return "none \u2014 escapes cannot be counted without the events log";
+  const batchedEscapes = batched.escape_rate_percent ?? 0;
+  if (batchedEscapes > (solo.escape_rate_percent ?? 0)) {
+    return batchedEscapes <= RARE_ESCAPE_PERCENT ? `lower batch to 2 \u2014 batched escapes are rare (${batchedEscapes.toFixed(1)} % <= ${RARE_ESCAPE_PERCENT} %) but above solo` : `revert \u2014 batched escape rate ${batchedEscapes.toFixed(1)} % is above ${RARE_ESCAPE_PERCENT} % and above solo`;
+  }
+  if ((batched.first_fail_rate_percent ?? 0) > (solo.first_fail_rate_percent ?? 0)) {
+    return "lower batch to 2 \u2014 batched first-fail rate is above solo";
+  }
+  return "keep \u2014 batched first-fail and escape rates are not worse than solo";
+}
+function waveSlicesOf(entries, armMarkers, armedSlice) {
+  const armedMarker = armMarkers.filter((marker) => marker.slice === armedSlice).at(-1);
+  if (armedMarker?.wave === void 0) return [];
+  const members = armMarkers.filter(
+    (marker) => marker.session === armedMarker.session && marker.wave === armedMarker.wave
+  );
+  return members.flatMap((marker) => activeSliceOf(entries, marker.slice) ?? []);
 }
 function activeSliceOf(entries, armedSlice) {
   if (armedSlice === null) return null;
@@ -1588,6 +1806,19 @@ function unreceiptedGreenCount(entries, greens) {
   );
   return greens.filter((green) => armingSessions.has(green.session)).length;
 }
+function waveSliceRows({ wave_slices: members }) {
+  return members.map((member) => ["wave slice", [activeSliceText({ active_slice: member })]]);
+}
+function classText(metrics) {
+  if (metrics.slices === 0) return "none";
+  const failRate = `${(metrics.first_fail_rate_percent ?? 0).toFixed(1)} % first-fail (${metrics.first_fail_slices} of ${metrics.slices})`;
+  const rounds = metrics.rounds_per_slice;
+  return `${failRate}, rounds max ${rounds?.max ?? 0}, median ${rounds?.median ?? 0}`;
+}
+function escapesText(escapes) {
+  if ("omitted" in escapes) return `omitted: ${escapes.omitted}`;
+  return `${escapes.waves} waves with an integration red held ${escapes.batched_slices} batched-passed slices (conformance-finding escapes are not recorded)`;
+}
 function activeSliceText({ active_slice: active }) {
   if (active === null) return "none \u2014 no slice is armed";
   const rounds = `${active.slice}: ${active.rounds} ${active.rounds === 1 ? "round" : "rounds"}`;
@@ -1614,7 +1845,7 @@ function unreceiptedGreensText({ unreceipted_greens: greens }) {
 }
 
 // core/src/state/known-keys.ts
-var GATE_STATE_KEYS = ["mode", "active_slice", "verify_green"];
+var GATE_STATE_KEYS = ["mode", "active_slice", "verify_green", "green_slice"];
 var SETTABLE_STATE_KEYS = [...GATE_STATE_KEYS, "repo_path", "auto", "auto_change", "auto_wait", "roadmap"];
 var KEYS_CLOSE_REMOVES = [...GATE_STATE_KEYS, "auto_wait"];
 var ENUM_VALUES = {
@@ -1644,7 +1875,7 @@ function pairRejection(pair) {
 
 // core/src/state/plan.ts
 import { chmodSync, existsSync, mkdirSync as mkdirSync3, readFileSync as readFileSync3, renameSync as renameSync2, rmSync as rmSync2 } from "node:fs";
-import path5 from "node:path";
+import path6 from "node:path";
 
 // core/src/state/transitions.ts
 function closeSlice() {
@@ -1664,14 +1895,14 @@ function isValidPlanDigest(value) {
   return PLAN_DIGEST_PATTERN.test(value);
 }
 function planPaths(stateFile, digest) {
-  const root = path5.join(stateRootDirectory(), "plans");
-  const dir = path5.join(root, repositoryIdFor(stateFile));
+  const root = path6.join(stateRootDirectory(), "plans");
+  const dir = path6.join(root, repositoryIdFor(stateFile));
   return {
     root,
     dir,
-    presentedFile: path5.join(dir, `presented-${digest}.md`),
-    approvedFile: path5.join(dir, `approved-${digest}.md`),
-    currentFile: path5.join(dir, "current.md")
+    presentedFile: path6.join(dir, `presented-${digest}.md`),
+    approvedFile: path6.join(dir, `approved-${digest}.md`),
+    currentFile: path6.join(dir, "current.md")
   };
 }
 function ensurePlanDirectory(paths) {
@@ -1943,11 +2174,11 @@ function namesAVerifyCheck(blockText) {
 
 // core/src/state/watch.ts
 import { rmSync as rmSync4, statSync as statSync2 } from "node:fs";
-import path7 from "node:path";
+import path8 from "node:path";
 
 // core/src/state/in-flight-registry.ts
 import { appendFileSync as appendFileSync3, closeSync, constants as constants2, mkdirSync as mkdirSync4, openSync, rmSync as rmSync3, writeSync } from "node:fs";
-import path6 from "node:path";
+import path7 from "node:path";
 var MARK_SET = "true";
 var APPEND_WITHOUT_CREATING = constants2.O_WRONLY | constants2.O_APPEND;
 function readRegistry(registry) {
@@ -1958,7 +2189,7 @@ function readRegistry(registry) {
   };
 }
 function entryReading(registry, agentId) {
-  const entryFile = path6.join(registry, agentId);
+  const entryFile = path7.join(registry, agentId);
   const read = readStateFile(entryFile);
   if (read.kind === "absent") return { kind: "gone" };
   if (read.kind === "unreadable") return { kind: "unreadable", entry: { agentId, cause: read.cause } };
@@ -1982,7 +2213,7 @@ function markReported(registry, agentId) {
 function appendMark(registry, agentId, mark) {
   let entry;
   try {
-    entry = openSync(path6.join(registry, agentId), APPEND_WITHOUT_CREATING);
+    entry = openSync(path7.join(registry, agentId), APPEND_WITHOUT_CREATING);
   } catch (error) {
     if (isErrnoException(error) && error.code === "ENOENT") return;
     throw error;
@@ -1995,7 +2226,7 @@ function appendMark(registry, agentId, mark) {
   }
 }
 function forgetAgent(registry, agentId) {
-  rmSync3(path6.join(registry, agentId), { recursive: true, force: true });
+  rmSync3(path7.join(registry, agentId), { recursive: true, force: true });
 }
 
 // core/src/state/watch.ts
@@ -2029,7 +2260,7 @@ function watchdogRecordOf(pid) {
 }
 function heartbeat(pidFile) {
   const record = watchdogRecordOf(process.pid);
-  withOwnerOnlyUmask(() => writeFileAtomically(path7.dirname(pidFile), pidFile, record, ".watch-"));
+  withOwnerOnlyUmask(() => writeFileAtomically(path8.dirname(pidFile), pidFile, record, ".watch-"));
 }
 function pollOnce(registry, limits) {
   const { agents, unreadable } = readRegistry(registry);
@@ -2107,7 +2338,9 @@ var USAGE = `usage: oso-state --session <id> set key=value [key=value ...]
        oso-state --session <id> amend-plan <slice-id>
        oso-state --session <id> deny-pattern add <pattern>
        oso-state --session <id> watch
-       oso-state --session <id> mark <diagnosed|escalated|empty-result>
+       oso-state --session <id> mark <diagnosed|escalated|empty-result> [slice]
+       oso-state --session <id> wave start <wave> <slice>=<low|high> [<slice>=<low|high> ...]
+       oso-state --session <id> launch-token <wave> <token> <slice> [<slice> ...]
        oso-state journal <text>
        oso-state journal --path
        oso-state scan comments <ref>
@@ -2125,7 +2358,13 @@ rate, rounds per slice, escalated slices, verdicts by model, malformed reports
 and unreceipted greens; --json prints the same fields as one JSON object.
 
 mark records a diagnosis, an escalation or an empty applier result against the
-armed slice, and is refused when no slice is armed.
+armed slice, and is refused when no slice is armed; inside a started wave it
+takes the id of one of the wave's slices instead.
+
+wave start records a wave's slices with their risk and arms each of them, so its
+rounds are counted per slice. launch-token registers the slices one verifier
+launch covers and is refused for an id outside the wave, a batch of more than 3
+slices or a batch holding a high-risk slice.
 
 watch polls this session's in-flight delegations and exits 0 once none is left,
 or 3 naming each one silent for 60 minutes, in flight for 3 hours or ended
@@ -2243,6 +2482,10 @@ function dispatch(argv) {
       return runWatch(sessionId, remaining);
     case "mark":
       return runMark(sessionId, remaining);
+    case "wave":
+      return runWave(sessionId, remaining);
+    case "launch-token":
+      return runLaunchToken(sessionId, remaining);
     case "scan":
       return dispatchScan(remaining);
     case "report":
@@ -2283,7 +2526,7 @@ function runSet(sessionId, pairs) {
   });
 }
 function receiptOfGreen(stateFile, verb, preWriteSlice, written) {
-  const receipt = greenReceiptOf(verdictsFileFor(stateFile), preWriteSlice, written);
+  const receipt = greenReceiptOf({ verdictsFile: verdictsFileFor(stateFile), wavesFile: wavesFileFor(stateFile) }, preWriteSlice, written);
   if (receipt.kind === "refused") throw new RefusedError(verb, receipt.reason);
   return receipt;
 }
@@ -2297,16 +2540,77 @@ function markArming(stateFile, sessionId, slice, content) {
   appendMarker(verdictsFileFor(stateFile), { kind: "arm", slice, session: sessionId, change });
 }
 function runMark(sessionId, remaining) {
-  if (remaining.length !== 1) throw new UsageError();
-  const word = remaining[0];
+  if (remaining.length < 1 || remaining.length > 2) throw new UsageError();
+  const [word, waveSlice] = remaining;
   const mark = SLICE_MARKS.find((value) => value === word);
   if (mark === void 0) throw new RefusedError("mark", `${word} is not one of ${SLICE_MARKS.join(", ")}`);
   const stateFile = stateFileFor(process.cwd());
-  const slice = activeSliceIn(stateFile);
+  const slice = waveSlice === void 0 ? activeSliceIn(stateFile) : sliceOfArmedWave(stateFile, mark, waveSlice);
   if (slice === null) throw new RefusedError(`mark ${mark}`, "no slice is armed");
   const change = recordedStateValue(readFileIfPresent(stateFile, "skip") ?? "", "auto_change");
   appendMarker(verdictsFileFor(stateFile), { kind: mark, slice, session: sessionId, change });
   return 0;
+}
+function sliceOfArmedWave(stateFile, mark, slice) {
+  const wave = newestWave(readWaveLog(wavesFileFor(stateFile)));
+  if (wave === void 0 || !wave.slices.some((member) => member.slice === slice)) {
+    throw new RefusedError(`mark ${mark}`, `slice ${slice} is not in the armed wave`);
+  }
+  return slice;
+}
+function runWave(sessionId, remaining) {
+  const [subverb, wave, ...pairs] = remaining;
+  if (subverb !== "start" || wave === void 0) throw new UsageError();
+  const start = waveStartOf(wave, pairs);
+  if ("refusal" in start) throw new RefusedError("wave start", start.refusal);
+  const { members } = start;
+  const stateFile = stateFileFor(process.cwd());
+  mkdirSync5(stateRootDirectory(), { recursive: true });
+  return withLock(stateFile, sessionId, () => {
+    const change = recordedStateValue(readFileIfPresent(stateFile, "skip") ?? "", "auto_change");
+    if (!appendWave(wavesFileFor(stateFile), { wave, slices: members, session: sessionId, change })) {
+      throw new RefusedError("wave start", "the wave record could not be written");
+    }
+    for (const { slice } of members) {
+      appendMarker(verdictsFileFor(stateFile), { kind: "arm", slice, session: sessionId, change, wave });
+    }
+    return 0;
+  });
+}
+function slicePairOf(pair) {
+  const eq = pair.lastIndexOf("=");
+  const slice = pair.slice(0, eq);
+  const risk = SLICE_RISKS.find((value) => value === pair.slice(eq + 1));
+  return eq < 1 || risk === void 0 || !isSliceId(slice) ? void 0 : { slice, risk };
+}
+function waveStartOf(wave, pairs) {
+  if (!isNameToken(wave)) return { refusal: `${wave} is not a wave name` };
+  if (pairs.length === 0) return { refusal: "a wave lists at least one <slice>=<low|high>" };
+  const parsed = pairs.map(slicePairOf);
+  const malformed = pairs[parsed.indexOf(void 0)];
+  if (malformed !== void 0) return { refusal: `${malformed} is not <slice>=<low|high>` };
+  const members = parsed.flatMap((member) => member ?? []);
+  const repeated = members.find(({ slice }, index) => members.findIndex((other) => other.slice === slice) !== index);
+  return repeated === void 0 ? { members } : { refusal: `slice ${repeated.slice} is listed twice` };
+}
+function runLaunchToken(sessionId, remaining) {
+  const [wave, token, ...slices] = remaining;
+  if (wave === void 0 || token === void 0) throw new UsageError();
+  if (!isSliceId(token)) throw new RefusedError("launch-token", `${token} is not a token name`);
+  const stateFile = stateFileFor(process.cwd());
+  mkdirSync5(stateRootDirectory(), { recursive: true });
+  return withLock(stateFile, sessionId, () => {
+    const wavesFile = wavesFileFor(stateFile);
+    const log = readWaveLog(wavesFile);
+    const armed = newestWaveNamed(log, wave);
+    if (armed === void 0) throw new RefusedError("launch-token", `no ${wave} was started`);
+    const refusal = launchTokenRefusal(log, armed, token, slices);
+    if (refusal !== void 0) throw new RefusedError("launch-token", refusal);
+    if (!appendLaunchToken(wavesFile, { wave, token, slices, session: sessionId })) {
+      throw new RefusedError("launch-token", "the token could not be written");
+    }
+    return 0;
+  });
 }
 function runReport(remaining) {
   const [flag, ...rest] = remaining;
@@ -2326,7 +2630,7 @@ function readGreens() {
   const read = readStateFile(eventsLog);
   if (read.kind === "absent") return { kind: "omitted", reason: `no events log at ${eventsLog}` };
   if (read.kind === "unreadable") return { kind: "omitted", reason: `cannot read ${eventsLog}: ${read.cause}` };
-  return { kind: "read", greens: unreceiptedGreensIn(read.content) };
+  return { kind: "read", greens: unreceiptedGreensIn(read.content), integrationReds: integrationRedsIn(read.content) };
 }
 function runWatch(sessionId, remaining) {
   if (remaining.length > 0) throw new UsageError();
@@ -2422,7 +2726,7 @@ function runDenyPattern(sessionId, remaining) {
     }
     const content = [...existing, pattern].map((line) => `${line}
 `).join("");
-    writeFileAtomically(path8.dirname(patternsFile), patternsFile, content, ".patterns.");
+    writeFileAtomically(path9.dirname(patternsFile), patternsFile, content, ".patterns.");
     logEvent({ event: "deny-pattern-add", session: sessionId, command: pattern });
     process.stdout.write(`oso-state: wrote ${patternsFile}
 `);

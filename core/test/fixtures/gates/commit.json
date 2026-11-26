@@ -4675,6 +4675,30 @@
           }
         ]
       }
+    },
+    {
+      "name": "commit gate: a commit inside a named green window is refused when the branch cannot be read",
+      "argv": [],
+      "env": {},
+      "state_before": {
+        ".local/state/oso-code/{repo}.state": "mode=plan\nactive_slice=wave-1\nverify_green=true\ngreen_slice=s1\nsession=test-session\n"
+      },
+      "cwd": "workspace",
+      "stdin": "{\"session_id\":\"test-session\",\"transcript_path\":\"{home}/.claude/projects/oso-code/test-session.jsonl\",\"cwd\":\"{cwd}\",\"permission_mode\":\"default\",\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"git commit -m y\",\"description\":\"regression case\"}}",
+      "expect": {
+        "exit": 0,
+        "stdout": {
+          "contains": [
+            "\"permissionDecision\":\"deny\""
+          ]
+        },
+        "stderr": "",
+        "events_appended": [
+          {
+            "event": "commit-denied"
+          }
+        ]
+      }
     }
   ]
 }

@@ -1,4 +1,4 @@
-const GATE_STATE_KEYS = ["mode", "active_slice", "verify_green"] as const;
+const GATE_STATE_KEYS = ["mode", "active_slice", "verify_green", "green_slice"] as const;
 
 export const SETTABLE_STATE_KEYS = [...GATE_STATE_KEYS, "repo_path", "auto", "auto_change", "auto_wait", "roadmap"] as const;
 
