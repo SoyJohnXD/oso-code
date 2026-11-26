@@ -6,12 +6,26 @@ import { captureOpenCodeVerifierReport } from "./verdict-capture.ts";
 
 export type WaveAgent = "applier" | "verifier";
 
-export interface WaveChildLaunch {
+export interface SingleChildLaunch {
   worktree: string;
   agent: WaveAgent;
   prompt: string;
   applierProof?: string;
 }
+
+export interface BatchPacket {
+  slice: string;
+  worktree: string;
+  applierProof: string;
+}
+
+export interface BatchChildLaunch {
+  agent: "verifier";
+  prompt: string;
+  packets: readonly BatchPacket[];
+}
+
+export type WaveChildLaunch = SingleChildLaunch | BatchChildLaunch;
 
 export interface WaveChildReported {
   outcome: "reported";
@@ -65,6 +79,14 @@ function pinEveryChildSession(request: WaveRequest): Promise<PinnedChild[]> {
   return Promise.all(request.launches.map((launch) => pinChildSession(launch, projectCommonDir, request)));
 }
 
+function isBatch(launch: WaveChildLaunch): launch is BatchChildLaunch {
+  return "packets" in launch;
+}
+
+function childDirectory(launch: WaveChildLaunch, projectDirectory: string): string {
+  return isBatch(launch) ? projectDirectory : launch.worktree;
+}
+
 const HOST_AGENT: Record<WaveAgent, string> = {
   applier: "oso-applier",
   verifier: VERIFIER_AGENT,
@@ -75,25 +97,26 @@ async function pinChildSession(
   projectCommonDir: string,
   request: WaveRequest,
 ): Promise<PinnedChild> {
-  const rejection = proofRejection(launch) ?? worktreeRejection(launch.worktree, projectCommonDir);
+  const directory = childDirectory(launch, request.projectDirectory);
+  const rejection = launchRejection(launch, projectCommonDir);
   if (rejection !== undefined) {
     return { state: "unpinnable", launch, reason: rejection };
   }
   try {
     const session = await withinBound(
       () => request.transport.create({
-        directory: launch.worktree,
-        title: `${HOST_AGENT[launch.agent]} in ${launch.worktree}`,
+        directory,
+        title: `${HOST_AGENT[launch.agent]} in ${directory}`,
         parentSessionID: request.parentSessionID,
         hostAgent: HOST_AGENT[launch.agent],
       }),
       request.timeoutMs,
     );
-    if (session.directory !== launch.worktree) {
+    if (session.directory !== directory) {
       return {
         state: "unpinnable",
         launch,
-        reason: `the host pinned the child session to ${session.directory}, not to ${launch.worktree}`,
+        reason: `the host pinned the child session to ${session.directory}, not to ${directory}`,
       };
     }
     return { state: "pinned", launch, sessionID: session.id };
@@ -102,7 +125,16 @@ async function pinChildSession(
   }
 }
 
-function proofRejection({ agent, applierProof }: WaveChildLaunch): string | undefined {
+function launchRejection(launch: WaveChildLaunch, projectCommonDir: string): string | undefined {
+  if (isBatch(launch)) {
+    return launch.packets
+      .map((packet) => worktreeRejection(packet.worktree, projectCommonDir))
+      .find((rejection) => rejection !== undefined);
+  }
+  return proofRejection(launch) ?? worktreeRejection(launch.worktree, projectCommonDir);
+}
+
+function proofRejection({ agent, applierProof }: SingleChildLaunch): string | undefined {
   if (agent === "verifier" || applierProof === undefined) {
     return undefined;
   }
@@ -128,7 +160,7 @@ async function collectChildReport(child: PinnedChild, request: WaveRequest): Pro
   if (child.state === "unpinnable") {
     return {
       outcome: "blocked",
-      worktree: child.launch.worktree,
+      worktree: childDirectory(child.launch, request.projectDirectory),
       agent: child.launch.agent,
       reason: child.reason,
     };
@@ -146,7 +178,7 @@ async function collectChildReport(child: PinnedChild, request: WaveRequest): Pro
     }
     return {
       outcome: "reported",
-      worktree: child.launch.worktree,
+      worktree: childDirectory(child.launch, request.projectDirectory),
       agent: child.launch.agent,
       sessionID: child.sessionID,
       verdict: parseAgentVerdict(raw),
@@ -157,7 +189,7 @@ async function collectChildReport(child: PinnedChild, request: WaveRequest): Pro
     const failure = `the child turn did not complete: ${messageOf(error)}`;
     return {
       outcome: "blocked",
-      worktree: child.launch.worktree,
+      worktree: childDirectory(child.launch, request.projectDirectory),
       agent: child.launch.agent,
       sessionID: child.sessionID,
       reason: unstopped === undefined ? failure : `${failure}; ${unstopped}`,
@@ -165,8 +197,16 @@ async function collectChildReport(child: PinnedChild, request: WaveRequest): Pro
   }
 }
 
-function promptOf({ prompt, applierProof }: WaveChildLaunch): string {
+function promptOf(launch: WaveChildLaunch): string {
+  if (isBatch(launch)) {
+    return [launch.prompt, ...launch.packets.map(packetSection)].join("\n\n");
+  }
+  const { prompt, applierProof } = launch;
   return applierProof === undefined ? prompt : `${prompt}\n\n${APPLIER_PROOF_HEADER}\n${applierProof}`;
+}
+
+function packetSection({ slice, worktree, applierProof }: BatchPacket): string {
+  return `=== slice packet: ${slice} ===\nWORKTREE PATH: ${worktree}\n\n${APPLIER_PROOF_HEADER}\n${applierProof}`;
 }
 
 const INTERRUPT_BOUND_MS = 10_000;

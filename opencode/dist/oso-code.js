@@ -5341,36 +5341,49 @@ function pinEveryChildSession(request) {
   const projectCommonDir = commonDirOf(request.projectDirectory);
   return Promise.all(request.launches.map((launch) => pinChildSession(launch, projectCommonDir, request)));
 }
+function isBatch(launch) {
+  return "packets" in launch;
+}
+function childDirectory(launch, projectDirectory) {
+  return isBatch(launch) ? projectDirectory : launch.worktree;
+}
 var HOST_AGENT = {
   applier: "oso-applier",
   verifier: VERIFIER_AGENT
 };
 async function pinChildSession(launch, projectCommonDir, request) {
-  const rejection = proofRejection(launch) ?? worktreeRejection(launch.worktree, projectCommonDir);
+  const directory = childDirectory(launch, request.projectDirectory);
+  const rejection = launchRejection(launch, projectCommonDir);
   if (rejection !== void 0) {
     return { state: "unpinnable", launch, reason: rejection };
   }
   try {
     const session = await withinBound(
       () => request.transport.create({
-        directory: launch.worktree,
-        title: `${HOST_AGENT[launch.agent]} in ${launch.worktree}`,
+        directory,
+        title: `${HOST_AGENT[launch.agent]} in ${directory}`,
         parentSessionID: request.parentSessionID,
         hostAgent: HOST_AGENT[launch.agent]
       }),
       request.timeoutMs
     );
-    if (session.directory !== launch.worktree) {
+    if (session.directory !== directory) {
       return {
         state: "unpinnable",
         launch,
-        reason: `the host pinned the child session to ${session.directory}, not to ${launch.worktree}`
+        reason: `the host pinned the child session to ${session.directory}, not to ${directory}`
       };
     }
     return { state: "pinned", launch, sessionID: session.id };
   } catch (error) {
     return { state: "unpinnable", launch, reason: `the child session could not be created: ${messageOf2(error)}` };
   }
+}
+function launchRejection(launch, projectCommonDir) {
+  if (isBatch(launch)) {
+    return launch.packets.map((packet) => worktreeRejection(packet.worktree, projectCommonDir)).find((rejection) => rejection !== void 0);
+  }
+  return proofRejection(launch) ?? worktreeRejection(launch.worktree, projectCommonDir);
 }
 function proofRejection({ agent, applierProof }) {
   if (agent === "verifier" || applierProof === void 0) {
@@ -5396,7 +5409,7 @@ async function collectChildReport(child, request) {
   if (child.state === "unpinnable") {
     return {
       outcome: "blocked",
-      worktree: child.launch.worktree,
+      worktree: childDirectory(child.launch, request.projectDirectory),
       agent: child.launch.agent,
       reason: child.reason
     };
@@ -5414,7 +5427,7 @@ async function collectChildReport(child, request) {
     }
     return {
       outcome: "reported",
-      worktree: child.launch.worktree,
+      worktree: childDirectory(child.launch, request.projectDirectory),
       agent: child.launch.agent,
       sessionID: child.sessionID,
       verdict: parseAgentVerdict(raw),
@@ -5425,15 +5438,26 @@ async function collectChildReport(child, request) {
     const failure = `the child turn did not complete: ${messageOf2(error)}`;
     return {
       outcome: "blocked",
-      worktree: child.launch.worktree,
+      worktree: childDirectory(child.launch, request.projectDirectory),
       agent: child.launch.agent,
       sessionID: child.sessionID,
       reason: unstopped === void 0 ? failure : `${failure}; ${unstopped}`
     };
   }
 }
-function promptOf({ prompt, applierProof }) {
+function promptOf(launch) {
+  if (isBatch(launch)) {
+    return [launch.prompt, ...launch.packets.map(packetSection)].join("\n\n");
+  }
+  const { prompt, applierProof } = launch;
   return applierProof === void 0 ? prompt : `${prompt}
+
+${APPLIER_PROOF_HEADER}
+${applierProof}`;
+}
+function packetSection({ slice, worktree, applierProof }) {
+  return `=== slice packet: ${slice} ===
+WORKTREE PATH: ${worktree}
 
 ${APPLIER_PROOF_HEADER}
 ${applierProof}`;
@@ -6222,10 +6246,13 @@ function dropMarkerQuietly(commonDir, sessionId) {
 
 // opencode/plugin/oso/wave-tool.ts
 var CHILD_BOUND_MS = 30 * 60 * 1e3;
+var MAX_WAVE_CHILDREN = 4;
+var MAX_BATCH_PACKETS = 3;
+var SLICE_ID2 = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 function waveTool(host) {
   return {
     name: "oso_wave",
-    description: "Runs one oso-code wave: every child is an oso-applier or oso-verifier session pinned to its own git worktree of this project, all children are opened before any of them is prompted, each child's turn blocks until it reports, and its status/verdict line is read back in band. A child that cannot be pinned, cannot run, or outlives its bound comes back blocked with the reason and never as a verdict.",
+    description: "Runs one oso-code wave: every child is an oso-applier or oso-verifier session pinned to its own git worktree of this project (a verifier child may instead carry a batch of up to 3 packets and run pinned to the project directory), a wave holds at most 4 children, all children are opened before any of them is prompted, each child's turn blocks until it reports, and its status/verdict line is read back in band. A child that cannot be pinned, cannot run, or outlives its bound comes back blocked with the reason and never as a verdict.",
     input: {
       type: "object",
       properties: {
@@ -6241,9 +6268,22 @@ function waveTool(host) {
               applier_proof: {
                 type: "string",
                 description: "The applier's proof, scan, and decisions_used report blocks for the slice this child verifies, verbatim and alone \u2014 a verifier child's field, which an applier child offered it comes back blocked for."
+              },
+              packets: {
+                type: "array",
+                description: "A verifier child's batch: up to 3 slice packets, in place of worktree and applier_proof. The child runs pinned to the project directory and each packet's worktree and applier_proof reach it.",
+                items: {
+                  type: "object",
+                  properties: {
+                    slice: { type: "string", description: "The slice id, unique within the batch." },
+                    worktree: { type: "string", description: "Absolute path of the slice's git worktree." },
+                    applier_proof: { type: "string", description: "The slice's applier proof, scan, and decisions_used blocks, verbatim and alone." }
+                  },
+                  required: ["slice", "worktree", "applier_proof"]
+                }
               }
             },
-            required: ["worktree", "agent", "prompt"]
+            required: ["agent", "prompt"]
           }
         }
       },
@@ -6274,11 +6314,17 @@ function parseLaunches(args) {
   if (!Array.isArray(children) || children.length === 0) {
     throw new Error("oso_wave needs a children array carrying at least one child");
   }
+  if (children.length > MAX_WAVE_CHILDREN) {
+    throw new Error(`oso_wave runs at most ${MAX_WAVE_CHILDREN} children per call, and this call carries ${children.length}`);
+  }
   return children.map(parseLaunch);
 }
 function parseLaunch(child, index) {
   const record = typeof child === "object" && child !== null ? child : {};
-  const { worktree, agent, prompt, applier_proof: applierProof } = record;
+  const { worktree, agent, prompt, applier_proof: applierProof, packets } = record;
+  if (packets !== void 0) {
+    return parseBatchLaunch(record, index);
+  }
   if (typeof worktree !== "string" || worktree === "") {
     throw new Error(`oso_wave child ${index} needs a worktree path, not ${JSON.stringify(worktree)}`);
   }
@@ -6292,6 +6338,45 @@ function parseLaunch(child, index) {
     throw new Error(`oso_wave child ${index} needs applier_proof as the applier's three report blocks, not ${JSON.stringify(applierProof)}`);
   }
   return { worktree, agent, prompt, applierProof };
+}
+function parseBatchLaunch(record, index) {
+  const { worktree, agent, prompt, applier_proof: applierProof, packets } = record;
+  if (agent !== "verifier") {
+    throw new Error(`oso_wave child ${index} carries packets, which only a verifier child may, not ${JSON.stringify(agent)}`);
+  }
+  if (worktree !== void 0 || applierProof !== void 0) {
+    throw new Error(`oso_wave child ${index} carries packets, so its worktree and applier_proof belong inside each packet`);
+  }
+  if (typeof prompt !== "string" || prompt === "") {
+    throw new Error(`oso_wave child ${index} needs a prompt`);
+  }
+  if (!Array.isArray(packets) || packets.length === 0) {
+    throw new Error(`oso_wave child ${index} needs packets carrying at least one packet`);
+  }
+  if (packets.length > MAX_BATCH_PACKETS) {
+    throw new Error(`oso_wave child ${index} carries ${packets.length} packets, and a batch holds at most ${MAX_BATCH_PACKETS}`);
+  }
+  const parsed = packets.map((packet, packetIndex) => parsePacket(packet, index, packetIndex));
+  const duplicate = parsed.find((packet, position) => parsed.findIndex((other) => other.slice === packet.slice) !== position);
+  if (duplicate !== void 0) {
+    throw new Error(`oso_wave child ${index} names the slice id ${duplicate.slice} in more than one packet`);
+  }
+  return { agent, prompt, packets: parsed };
+}
+function parsePacket(packet, childIndex, index) {
+  const record = typeof packet === "object" && packet !== null ? packet : {};
+  const { slice, worktree, applier_proof: applierProof } = record;
+  const where = `oso_wave child ${childIndex} packet ${index}`;
+  if (typeof slice !== "string" || !SLICE_ID2.test(slice)) {
+    throw new Error(`${where} needs a slice id matching ${SLICE_ID2}, not ${JSON.stringify(slice)}`);
+  }
+  if (typeof worktree !== "string" || worktree === "") {
+    throw new Error(`${where} needs a worktree path, not ${JSON.stringify(worktree)}`);
+  }
+  if (typeof applierProof !== "string" || applierProof === "") {
+    throw new Error(`${where} needs applier_proof as the applier's three report blocks, not ${JSON.stringify(applierProof)}`);
+  }
+  return { slice, worktree, applierProof };
 }
 function isWaveAgent(value) {
   return value === "applier" || value === "verifier";

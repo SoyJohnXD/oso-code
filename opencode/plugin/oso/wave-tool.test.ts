@@ -70,7 +70,7 @@ test("oso_wave declares the children the model must name and the two agents it a
     items: { required: string[]; properties: Record<string, { type?: string; enum?: string[] }> };
   };
   assert.equal(children.type, "array");
-  assert.deepEqual(children.items.required, ["worktree", "agent", "prompt"]);
+  assert.deepEqual(children.items.required, ["agent", "prompt"]);
   assert.deepEqual(children.items.properties.agent?.enum, ["applier", "verifier"]);
   assert.equal(children.items.properties.applier_proof?.type, "string");
   assert.match(tool.description, /worktree/);
@@ -189,6 +189,71 @@ test("oso_wave runs from the directory of the calling session's record, not a di
     const children = replyingSessions(() => "status: done\n");
     const host = { session: children.api, directoryOf: async (sessionID: string) => (sessionID === "ses-root" ? fixture.repoDir : "/nowhere") } as unknown as ToolHost;
     const result = await waveTool(host).execute({ children: [{ worktree: fixture.applierWorktree, agent: "applier", prompt: "p" }] }, CALL);
+    assert.equal(result.metadata?.blocked, 0);
+  });
+});
+
+const PROOF = "proof:\n  - criterion: c\nscan:\n  - cmd: x  exit: 0  hits: none\ndecisions_used:\n  - D1";
+
+test("oso_wave refuses a call with more children than the cap before any session exists", async () => {
+  await withToolFixture(async (fixture) => {
+    const children = replyingSessions(() => "status: done\n");
+    const child = { worktree: fixture.applierWorktree, agent: "applier", prompt: "p" };
+    await assert.rejects(
+      () => waveTool(hostIn(fixture.repoDir, children)).execute({ children: [child, child, child, child, child] }, CALL),
+      /at most 4 children/,
+    );
+    assert.deepEqual(children.created, []);
+  });
+});
+
+test("oso_wave refuses a batch of four packets, a repeated slice id and a bad packet before any session exists", async () => {
+  await withToolFixture(async (fixture) => {
+    const children = replyingSessions(() => "token: t\n");
+    const tool = waveTool(hostIn(fixture.repoDir, children));
+    const packet = (slice: string) => ({ slice, worktree: fixture.applierWorktree, applier_proof: PROOF });
+    const batch = (packets: unknown[]) => ({ children: [{ agent: "verifier", prompt: "verify\nTOKEN: t", packets }] });
+    await assert.rejects(() => tool.execute(batch(["s1", "s2", "s3", "s4"].map(packet)), CALL), /at most 3/);
+    await assert.rejects(() => tool.execute(batch([packet("s1"), packet("s1")]), CALL), /slice id s1 in more than one packet/);
+    await assert.rejects(() => tool.execute(batch([{ ...packet("s1"), slice: "../s1" }]), CALL), /needs a slice id/);
+    await assert.rejects(() => tool.execute(batch([{ slice: "s1", worktree: fixture.applierWorktree }]), CALL), /needs applier_proof/);
+    const invalid = await tool.execute(batch([packet("s1"), { ...packet("s2"), worktree: fixture.repoDir }]), CALL);
+    assert.equal(invalid.metadata?.blocked, 1);
+    assert.match(contentOf(invalid), /is not a git worktree, it is root/);
+    assert.deepEqual(children.created, []);
+  });
+});
+
+test("oso_wave runs a batch verifier of three packets in one session pinned to the project directory", async () => {
+  await withToolFixture(async (fixture) => {
+    const children = replyingSessions(() => "token: t\n");
+    const worktrees = [fixture.applierWorktree, fixture.verifierWorktree];
+    const result = await waveTool(hostIn(fixture.repoDir, children)).execute(
+      {
+        children: [{
+          agent: "verifier",
+          prompt: "verify the batch\nTOKEN: t",
+          packets: [
+            { slice: "s1", worktree: worktrees[0], applier_proof: "proof-one" },
+            { slice: "s2", worktree: worktrees[1], applier_proof: "proof-two" },
+            { slice: "s3", worktree: worktrees[0], applier_proof: "proof-three" },
+          ],
+        }],
+      },
+      CALL,
+    );
+    assert.deepEqual(children.created.map((child) => child.directory), [fixture.repoDir]);
+    assert.equal(children.turns.length, 1);
+    assert.equal(children.turns[0]?.directory, fixture.repoDir);
+    assert.equal(
+      children.turns[0]?.text,
+      [
+        "verify the batch\nTOKEN: t",
+        `=== slice packet: s1 ===\nWORKTREE PATH: ${worktrees[0]}\n\n=== applier_proof ===\nproof-one`,
+        `=== slice packet: s2 ===\nWORKTREE PATH: ${worktrees[1]}\n\n=== applier_proof ===\nproof-two`,
+        `=== slice packet: s3 ===\nWORKTREE PATH: ${worktrees[0]}\n\n=== applier_proof ===\nproof-three`,
+      ].join("\n\n"),
+    );
     assert.equal(result.metadata?.blocked, 0);
   });
 });
