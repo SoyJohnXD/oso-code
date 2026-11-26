@@ -479,6 +479,8 @@ function restoreNoteOf(restore) {
 var ENGRAM_FIX = "bash bootstrap/install.sh installs the engram plugin AND the pinned engram binary its .mcp.json spawns by name; where that binary is installed but the client still cannot start it, either the directory holding it is not on the PATH Claude Code reads or the copy there does not run at all \u2014 that run's wiring summary says which and names the command for it (check 13 below discriminates the two on Windows), and Claude Code has to be restarted after";
 var CONTEXT7_FIX = "claude plugin install oso-code@oso-code registers it (it ships in the plugin's .mcp.json, so there is no mcp add to run), and it starts through npx \u2014 so install Node.js if npx is missing, then restart Claude Code";
 var FALLOW_FIX = "bash bootstrap/install.sh installs the pinned fallow package from npm and wires a missing entry; an existing one it never touches, so repoint that with claude mcp remove fallow -s user && claude mcp add --scope user fallow -- the command that run names";
+var PLUGIN_CACHE_CHECK = "oso-code plugin cache at repository HEAD";
+var PLUGIN_CACHE_REFRESH_FIX = "claude plugin update is a no-op while the plugin version is unchanged, so refresh the cache with claude plugin uninstall oso-code@oso-code && claude plugin install oso-code@oso-code (bash bootstrap/install.sh --yes does that when the shas differ), then restart Claude Code";
 var STATE_BIN_FIX = "bash bootstrap/install.sh publishes the installed plugin's absolute bin/oso-state there, then restart Claude Code";
 var GIT_BASH_FIX = "point CLAUDE_CODE_GIT_BASH_PATH at the bash.exe you have (typically C:\\Program Files\\Git\\bin\\bash.exe) \u2014 bootstrap\\install.ps1 finds it and hands it to install.sh, which repairs the stored value; then restart Claude Code";
 var LEGACY_HOOK_COMMAND_PATTERNS = ["check-plan-contract", "clean-code-gate", "skill-registry-refresh", "gentle-ai"];
@@ -492,6 +494,7 @@ function verifyClaude(input) {
   const pluginListing = spawnClaudeStdout(environment, ["plugin", "list"]);
   const mcpListing = spawnClaudeStdout(environment, ["mcp", "list"]);
   checkPluginInstalled(report2, pluginListing);
+  checkPluginCacheMatchesHead(report2, claudeDir, repositoryRoot2, environment);
   checkMcpConnectivity(report2, mcpListing);
   checkLegacyArtifactsRemoved(report2, repositoryRoot2, claudeDir);
   checkSettingsFreeOfGentleHooks(report2, claudeDir);
@@ -510,6 +513,19 @@ function verifyClaude(input) {
 }
 function checkPluginInstalled(report2, pluginListing) {
   report2.check("oso-code plugin installed", "1", countMatchingLines(pluginListing, "oso-code") >= 1 ? "1" : "0");
+}
+function checkPluginCacheMatchesHead(report2, claudeDir, repositoryRoot2, environment) {
+  const head = repositoryHeadSha(repositoryRoot2, environment);
+  if (head === void 0) {
+    report2.skip(`${PLUGIN_CACHE_CHECK} \u2014 ${repositoryRoot2} has no readable git HEAD to compare against`);
+    return;
+  }
+  const cached = installedPluginCommitSha(path4.join(claudeDir, "plugins", "installed_plugins.json"));
+  if (cached === void 0) {
+    report2.skip(`${PLUGIN_CACHE_CHECK} \u2014 installed_plugins.json records no gitCommitSha for oso-code@oso-code`);
+    return;
+  }
+  report2.check(PLUGIN_CACHE_CHECK, head, cached, PLUGIN_CACHE_REFRESH_FIX);
 }
 function checkMcpConnectivity(report2, mcpListing) {
   report2.check("engram MCP connected", "1", mcpConnected(mcpListing, "engram"), ENGRAM_FIX);
@@ -707,17 +723,29 @@ function resolveInstallRoot(claudeDir) {
   return highestVersionedCacheDirectory(path4.join(claudeDir, "plugins", "cache", "oso-code", "oso-code"));
 }
 function installRootFromManifest(installedPluginsFile) {
+  return osoPluginRecordField(installedPluginsFile, "installPath");
+}
+function installedPluginCommitSha(installedPluginsFile) {
+  return osoPluginRecordField(installedPluginsFile, "gitCommitSha");
+}
+function osoPluginRecordField(installedPluginsFile, field) {
   if (!isReadableRegularFile(installedPluginsFile)) return void 0;
   try {
     const parsed = readJsonObject(installedPluginsFile);
     const plugins = parsed["plugins"];
     const entries = isRecord(plugins) ? plugins["oso-code@oso-code"] : void 0;
     const first = Array.isArray(entries) ? entries[0] : void 0;
-    const installPath = isRecord(first) ? first["installPath"] : void 0;
-    return typeof installPath === "string" && installPath !== "" ? installPath : void 0;
+    const value = isRecord(first) ? first[field] : void 0;
+    return typeof value === "string" && value !== "" ? value : void 0;
   } catch {
     return void 0;
   }
+}
+function repositoryHeadSha(repositoryRoot2, environment) {
+  const result = spawnSync("git", ["-C", repositoryRoot2, "rev-parse", "HEAD"], { env: environment, encoding: "utf8" });
+  if (result.error !== void 0 || result.status !== 0) return void 0;
+  const sha = result.stdout.trim();
+  return sha === "" ? void 0 : sha;
 }
 function isRecord(value) {
   return typeof value === "object" && value !== null;
@@ -1267,6 +1295,8 @@ function installClaude(input) {
     return claudeFatal("install", "the oso-code plugin itself failed to install", error, restore);
   }
   softPluginMaintenance(input.environment);
+  const cacheRefresh = refreshStalePluginCache(input.environment, claudeDir, input.repositoryRoot);
+  if (cacheRefresh !== void 0) wiring.push(cacheRefresh);
   wiring.push(...migrateContext7(input.environment));
   wiring.push(publishStateBinPath(claudeDir, settingsFile));
   const gitBash = publishGitBashPath(input.platform, input.environment, settingsFile);
@@ -1618,6 +1648,35 @@ function installOsoPluginCore(environment, repositoryRoot2) {
 function softPluginMaintenance(environment) {
   spawnSync3("claude", ["plugin", "marketplace", "update", "oso-code"], { env: environment, encoding: "utf8" });
   spawnSync3("claude", ["plugin", "update", "oso-code@oso-code"], { env: environment, encoding: "utf8" });
+}
+var PLUGIN_CACHE_COMPONENT = "oso-code plugin cache";
+function refreshStalePluginCache(environment, claudeDir, repositoryRoot2) {
+  const installedPluginsFile = path6.join(claudeDir, "plugins", "installed_plugins.json");
+  const head = repositoryHeadSha(repositoryRoot2, environment);
+  const cached = installedPluginCommitSha(installedPluginsFile);
+  if (head === void 0 || cached === void 0) return void 0;
+  if (cached === head) return wiringOk(PLUGIN_CACHE_COMPONENT, `at repository HEAD ${shortSha(head)}`);
+  const stale = `cached at ${shortSha(cached)} while the repository HEAD is ${shortSha(head)}`;
+  const uninstall = spawnSync3("claude", ["plugin", "uninstall", "oso-code@oso-code"], { env: environment, encoding: "utf8" });
+  if (uninstall.error !== void 0 || uninstall.status !== 0) {
+    return wiringFail(PLUGIN_CACHE_COMPONENT, `${stale}, and the uninstall failed: ${collapsedOutput(uninstall)} \u2014 fix: ${PLUGIN_CACHE_REFRESH_FIX}`);
+  }
+  const install = spawnSync3("claude", ["plugin", "install", "oso-code@oso-code"], { env: environment, encoding: "utf8" });
+  if (install.error !== void 0 || install.status !== 0) {
+    return wiringFail(
+      PLUGIN_CACHE_COMPONENT,
+      `${stale}; the stale copy was uninstalled but the reinstall failed: ${collapsedOutput(install)} \u2014 fix: claude plugin install oso-code@oso-code, then restart Claude Code`
+    );
+  }
+  const refreshed = installedPluginCommitSha(installedPluginsFile);
+  if (refreshed === head) return wiringOk(PLUGIN_CACHE_COMPONENT, `refreshed from ${shortSha(cached)} to repository HEAD ${shortSha(head)}`);
+  return wiringFail(
+    PLUGIN_CACHE_COMPONENT,
+    `${stale}, and a reinstall recorded ${refreshed === void 0 ? "no sha" : shortSha(refreshed)} \u2014 the oso-code marketplace serves another source than this checkout (see claude plugin marketplace list); push HEAD or point the marketplace at this directory, then re-run this installer`
+  );
+}
+function shortSha(sha) {
+  return sha.slice(0, 7);
 }
 function registerOsoMarketplace(environment, repositoryRoot2) {
   const registry = spawnSync3("claude", ["plugin", "marketplace", "list", "--json"], { env: environment, encoding: "utf8" });

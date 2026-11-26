@@ -43,8 +43,19 @@ writeFakeClaudeStub(path.join(fakeBinDir, "claude"));
 
 function writeFakeClaudeStub(destination: string): void {
   const body = [
+    'const fs = require("node:fs");',
     "const args = process.argv.slice(2);",
     'const key = args.join(" ");',
+    'if (process.env.FAKE_CLAUDE_LOG) fs.appendFileSync(process.env.FAKE_CLAUDE_LOG, key + "\\n");',
+    "const pluginsFile = process.env.FAKE_CLAUDE_PLUGINS_FILE;",
+    'if (pluginsFile && key === "plugin uninstall oso-code@oso-code") fs.writeFileSync(pluginsFile, JSON.stringify({ plugins: {} }));',
+    'if (pluginsFile && key === "plugin install oso-code@oso-code") {',
+    '  const record = JSON.parse(fs.readFileSync(pluginsFile, "utf8"));',
+    '  if (!record.plugins["oso-code@oso-code"]) {',
+    '    record.plugins["oso-code@oso-code"] = [{ installPath: process.env.FAKE_CLAUDE_INSTALL_PATH, gitCommitSha: process.env.FAKE_CLAUDE_SOURCE_SHA }];',
+    "    fs.writeFileSync(pluginsFile, JSON.stringify(record));",
+    "  }",
+    "}",
     'const failing = (process.env.FAKE_CLAUDE_FAIL || "").split("|").filter(Boolean);',
     "if (failing.includes(key)) {",
     '  process.stderr.write(`fake-claude: ${key} failed\\n`);',
@@ -163,6 +174,69 @@ describe("ownership table: env.OSO_STATE_BIN is set", () => {
     assert.match(outcome.report, /oso-state path: FAILED/);
     const env = readSettings(claudeDir)["env"] as Record<string, string> | undefined;
     assert.equal(env?.["OSO_STATE_BIN"], undefined);
+  });
+});
+
+describe("installClaude: a plugin cache recorded at another commit than the repository HEAD is refreshed", () => {
+  const STALE_SHA = "c2c8156000000000000000000000000000000000";
+
+  function committedRepositoryRoot(): string {
+    const root = scratchRepositoryRoot();
+    gitSync(root, ["-c", "user.name=oso", "-c", "user.email=oso@example.invalid", "-c", "commit.gpgsign=false", "commit", "-q", "--allow-empty", "-m", "seed"]);
+    return root;
+  }
+
+  function seedPluginRecord(claudeDir: string, installRoot: string, gitCommitSha: string): string {
+    const pluginsFile = path.join(claudeDir, "plugins", "installed_plugins.json");
+    mkdirSync(path.dirname(pluginsFile), { recursive: true });
+    writeFileSync(pluginsFile, JSON.stringify({ plugins: { "oso-code@oso-code": [{ installPath: installRoot, gitCommitSha }] } }));
+    return pluginsFile;
+  }
+
+  function runInstall(shas: { recorded: (head: string) => string; servedOnReinstall: (head: string) => string }) {
+    const homeDirectory = freshHome();
+    const claudeDir = path.join(homeDirectory, ".claude");
+    const repositoryRoot = committedRepositoryRoot();
+    const head = gitSync(repositoryRoot, ["rev-parse", "HEAD"]).trim();
+    const installRoot = path.join(homeDirectory, "plugin-install-root");
+    const pluginsFile = seedPluginRecord(claudeDir, installRoot, shas.recorded(head));
+    const log = path.join(homeDirectory, "claude-calls.log");
+    const outcome = installClaude(
+      commandInput({
+        homeDirectory,
+        repositoryRoot,
+        environment: {
+          PATH: fakeBinDir,
+          FAKE_CLAUDE_LOG: log,
+          FAKE_CLAUDE_PLUGINS_FILE: pluginsFile,
+          FAKE_CLAUDE_INSTALL_PATH: installRoot,
+          FAKE_CLAUDE_SOURCE_SHA: shas.servedOnReinstall(head),
+        },
+      }),
+    );
+    const calls = readFileSync(log, "utf8").split("\n");
+    const recorded = JSON.parse(readFileSync(pluginsFile, "utf8")).plugins["oso-code@oso-code"]?.[0]?.gitCommitSha;
+    return { outcome, calls, recorded, head };
+  }
+
+  test("uninstalls and reinstalls the plugin, leaving the record at HEAD and the row OK", { skip: STUBS_UNREACHABLE_ON_THE_INJECTED_PATH }, () => {
+    const { outcome, calls, recorded, head } = runInstall({ recorded: () => STALE_SHA, servedOnReinstall: (head) => head });
+    const uninstallAt = calls.indexOf("plugin uninstall oso-code@oso-code");
+    assert.ok(uninstallAt >= 0, calls.join("\n"));
+    assert.ok(calls.indexOf("plugin install oso-code@oso-code", uninstallAt) > uninstallAt, calls.join("\n"));
+    assert.equal(recorded, head);
+    assert.match(outcome.report, new RegExp(`oso-code plugin cache: OK — refreshed from c2c8156 to repository HEAD ${head.slice(0, 7)}`));
+  });
+
+  test("leaves a cache already at HEAD alone", { skip: STUBS_UNREACHABLE_ON_THE_INJECTED_PATH }, () => {
+    const { outcome, calls, head } = runInstall({ recorded: (head) => head, servedOnReinstall: (head) => head });
+    assert.ok(!calls.includes("plugin uninstall oso-code@oso-code"), calls.join("\n"));
+    assert.match(outcome.report, new RegExp(`oso-code plugin cache: OK — at repository HEAD ${head.slice(0, 7)}`));
+  });
+
+  test("reports the row as failed when the reinstall still records another sha than HEAD", { skip: STUBS_UNREACHABLE_ON_THE_INJECTED_PATH }, () => {
+    const { outcome } = runInstall({ recorded: () => STALE_SHA, servedOnReinstall: () => STALE_SHA });
+    assert.match(outcome.report, /oso-code plugin cache: FAILED — cached at c2c8156 .*the oso-code marketplace serves another source than this checkout/);
   });
 });
 
