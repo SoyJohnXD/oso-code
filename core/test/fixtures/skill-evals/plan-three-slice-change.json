@@ -30,14 +30,15 @@
       ]
     },
     {
-      "behavior": "Cuts vertical slices with Goal, Files, Verify and Depends-on, then asks the execution mode and disposition in one round",
+      "behavior": "Cuts vertical slices with Goal, Files, Verify, Depends-on and Risk, derives the execution mode automatically and asks the disposition",
       "anchors": [
         { "file": "plugin/skills/plan/SKILL.md", "pattern": "## 4\\. Slicing" },
         { "file": "plugin/skills/plan/SKILL.md", "pattern": "\\*\\*Goal\\*\\*" },
         { "file": "plugin/skills/plan/SKILL.md", "pattern": "\\*\\*Files\\*\\*" },
         { "file": "plugin/skills/plan/SKILL.md", "pattern": "\\*\\*Verify\\*\\*" },
         { "file": "plugin/skills/plan/SKILL.md", "pattern": "\\*\\*Depends-on\\*\\*" },
-        { "file": "plugin/skills/plan/SKILL.md", "pattern": "\\*\\*The execution mode\\.\\*\\*" },
+        { "file": "plugin/skills/plan/SKILL.md", "pattern": "\\*\\*Risk\\*\\*" },
+        { "file": "plugin/skills/plan/SKILL.md", "pattern": "\\*\\*The execution mode\\*\\* is AUTOMATIC" },
         { "file": "plugin/skills/plan/SKILL.md", "pattern": "\\*\\*The execution disposition\\*\\*" }
       ]
     },
@@ -51,13 +52,13 @@
       ]
     },
     {
-      "behavior": "Executes each slice by activating it, applying under the threshold, verifying with a fresh verifier and committing only on pass",
+      "behavior": "Executes each slice by activating it, applying under the threshold, verifying with its own verifier verdict and committing only on pass",
       "anchors": [
         { "file": "plugin/skills/plan/SKILL.md", "pattern": "## 6\\. Execution" },
         { "file": "plugin/skills/plan/SKILL.md", "pattern": "oso-state set mode=plan active_slice=<n> verify_green=false" },
         { "file": "plugin/skills/plan/SKILL.md", "pattern": "\\*\\*Apply\\*\\*" },
         { "file": "plugin/skills/plan/SKILL.md", "pattern": "DECISION BLOCK" },
-        { "file": "plugin/skills/plan/SKILL.md", "pattern": "Every slice goes to a FRESH verifier" },
+        { "file": "plugin/skills/plan/SKILL.md", "pattern": "Each slice gets its OWN verifier verdict" },
         { "file": "plugin/skills/plan/SKILL.md", "pattern": "Only on the verifier's `pass`" },
         { "file": "plugin/skills/_shared/reporting.md", "pattern": "one non-trivial file[^.]*INLINE" }
       ]

@@ -66,6 +66,8 @@ The marker is the flow's to write, never a rail's: `"${OSO_STATE_BIN:-oso-state}
 
 `<worktree root>` is the host's worktree space under `$HOME/.local/share/opencode/worktree/<projectID>/` — the space the host keeps worktrees in. Cutting the trees is YOURS and the command is the neutral body's own: `git -C <main checkout> worktree add -b oso/<change>/<slice> <worktree root>/<slice> <wave start>`, run against that space before any child is launched. The installed plugin creates no worktree, and `oso_wave` runs no git: it pins each child session to a worktree that already exists by carrying `directory`, and refuses a path that is not a git worktree of this project. Every slice still receives its exact absolute worktree path and its ref coordinate (SLICE START or WAVE START).
 
+A verification batch is one `oso_wave` verifier child carrying `packets` — one per slice, up to 3 — in place of a worktree and `applier_proof`; each packet names its own worktree path, and the verifier runs that slice's checks there. A call carries at most 4 children and the tool refuses more in code, so a wave wider than that verifies across calls. Register the child's `TOKEN` with `oso-state launch-token` before the call.
+
 ## Naming and invoking the harness's own skills
 
 Installed plugin skills carry NO namespace on this host: every skill auto-registers as a slash command under its own `name`, and the installed `opencode.json` carries `permission.skill` deny rules for the three operator-only modes, hiding them from the model while the slash command stays. Operator-invoked modes use that command spelling; an orchestrator opens and reads auxiliary `SKILL.md` files in the installed tree.

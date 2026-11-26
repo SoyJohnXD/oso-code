@@ -28,7 +28,7 @@ The operator decides; you guide, present options with tradeoffs, and never assum
 - `_shared/reporting.md` — read ALWAYS by this flow: report every arm, launch, verdict and close under its milestone contract; it also defines the inline-or-applier threshold.
 - `_shared/rubric.md` — read ALWAYS by this flow: §2 step 6 audits the map against it.
 - `_shared/unattended.md` — read only once AUTO arms: §4's disposition answer, an operator instruction at any point, or a change running as a child of the ROADMAP.
-- `_shared/parallel.md` — read only once §4's execution-mode question picks PARALLEL.
+- `_shared/parallel.md` — read only once §4's automatic execution mode is PARALLEL.
 - `_shared/front-surface.md` — read when the change touches a front surface.
 - `_shared/didactic.md` — read when the explanation depth is didactic: the didactic register.
 
@@ -104,7 +104,8 @@ Derived categories (§2 step 3) — Data, UX behavior, Security among others —
 
 - **Base ref** — what the close's two judges (§7) diff against; `none` when nothing is committed yet, which forces SEQUENTIAL execution (§4).
 - **Per-slice commits** — ON by default: a slice commits when it goes green, in both modes. A branch policy that can't take one commit per slice turns them off here, which also forces SEQUENTIAL.
-- **Concurrency** — whether this project's bar tolerates N slices' checks side by side (a shared port, one test database, a build cache, a lockfile). Record it as a QUESTION; §6 answers it at the first wave.
+- **Concurrency** — whether this project's bar tolerates N slices' checks side by side (a shared port, one test database, a build cache, a lockfile). Record it as a QUESTION; §6 answers it at the first wave from evidence, never as an operator question.
+- **Worktrees** — from evidence, whether a worktree builds and tests on its own dependency install (never a symlink of the main checkout's); unknown is measured at the first wave.
 - When the change touches a front surface, the pinned design detector joins these commands as `_shared/front-surface.md`'s PLAN wiring records it.
 
 Rules:
@@ -125,8 +126,9 @@ Split the change into vertical slices — each delivers observable progress and 
 - **Files** — expected touch points.
 - **Verify** — which project checks plus what observable behavior proves it, and at least one automated check that fails without the slice. When none is sensible (docs, config), state `Verify-exception: <reason>` instead.
 - **Depends-on** — the slices that must land first, by number, or nothing.
+- **Risk** — `low` or `high`, proposed from the surface map's evidence and changeable at approval. High: auth or payments security surfaces, data model and migrations, rollback or infra, many-consumer contracts (expand-contract), irreversible actions per the roadmap irreversibility bar; doubt is high. A slice revealing such a surface while applied becomes high.
 
-Cut by that bar alone, never by execution mode: the dependency graph is DERIVED from the cut. A horizontal cut made for parallelism ("all the types") is individually unverifiable, so not a slice.
+The dependency graph is DERIVED from the cut. Low-risk work may be split finer only when that raises a wave's width to 2 or more; each slice keeps its own failing check, no contract splits across slices, and the never-a-one-line-task floor stands. A horizontal cut made for parallelism ("all the types") is individually unverifiable, so not a slice.
 
 **Design-foundation slice.** When the change touches a front surface and the project has no `PRODUCT.md`/`DESIGN.md`, the FIRST slice is design-foundation — wave 0, run by the orchestrator — cut and run as `_shared/front-surface.md`'s PLAN wiring states.
 
@@ -134,24 +136,23 @@ Cut by that bar alone, never by execution mode: the dependency graph is DERIVED 
 
 **The dependency graph.** Draw one edge per dependency, read off the surface map, and fill each slice's `Depends-on` from it. Four sources: a CONTRACT and its consumers, SHARED STATE two slices both write, a DATA FLOW from one into the other, and VERIFICATION-BAR COUPLING — two slices that cannot pass this project's bar apart (a rule added in one, the count a doc states for it raised in the other). File overlap is a secondary check for physical conflicts only.
 
-**Waves.** A wave is a set of slices with no edge between any two, starting once the wave before it has landed. CONTRACT never shares a wave with a MIGRATE slice. A wave's WIDTH is how many slices it holds. Present the slices in wave order, each with its four fields, and the widest wave's width.
+**Waves.** A wave is a set of slices with no edge between any two, starting once the wave before it has landed. CONTRACT never shares a wave with a MIGRATE slice. A wave's WIDTH is how many slices it holds. Present the slices in wave order, each with its five fields, and the widest wave's width.
 
-**The execution mode.** Ask the operator, as the first question of one round: run the slices SEQUENTIALLY in the main checkout, or each wave in PARALLEL, one worktree per slice — width, estimated gain and recommendation travel in the question's own fields.
+**The execution mode** is AUTOMATIC, never a question: PARALLEL, one worktree per slice, when some wave has width 2 or more and nothing forces sequential, else SEQUENTIAL in the main checkout.
 
-- Recommend parallel when the widest wave is 3 or more; at 2, report the number and recommend sequential.
-- The gain comes from the widest wave, never the slice count: a wave costs its slowest slice plus one integration gate.
-- The concurrency cap defaults to 4, adjustable here — this settles §3's concurrency question.
-- A base ref of `none`, or per-slice commits off, never reaches this question: sequential is the only mode. Record the forced mode, its reason, the wave count and the widest width for §5's planning disposition.
+- A base ref of `none`, or per-slice commits off, forces SEQUENTIAL.
+- The gain comes from the widest wave, never the slice count: a wave costs its slowest slice plus one integration gate. The concurrency cap defaults to 4.
+- The approval document shows the mode with its width, reason and estimated gain; the operator may override it there. Record the mode, its reason and any override for §5's planning disposition.
 
-**The execution disposition**, the round's second question: run §6 and §7 NORMALLY, with the operator at every decision point, or under AUTO. NORMAL is the default and the recommendation; an operator who said auto earlier has answered it. An AUTO answer arms it: read `_shared/unattended.md` now.
+**The execution disposition**, a question of its own: run §6 and §7 NORMALLY, with the operator at every decision point, or under AUTO. NORMAL is the default and the recommendation; an operator who said auto earlier has answered it. An AUTO answer arms it: read `_shared/unattended.md` now.
 
 Record the mode, the cap when parallel, and the disposition with its date in the ledger.
 
 ## 5. Repaso de cambios (change recap) — heads the approval document
 
-The repaso is ALWAYS delivered, heading the plan document your host's approval gate receives, then the FULL plan detail — context, the frozen ledger, every slice with its four fields under its wave, and the verification bar.
+The repaso is ALWAYS delivered, heading the plan document your host's approval gate receives, then the FULL plan detail — context, the frozen ledger, every slice with its five fields under its wave, and the verification bar.
 
-The full detail opens with a compact **Planning disposition**: Phase 1 intent approved; Phase 2 surface map completed; Phase 3 ledger frozen plus the doubt-pass outcome or explicit N/A reason; Phase 4 slicing completed with slice count, wave count, widest width, execution mode CHOSEN or FORCED with the reason; Phase 5 approval document ready. It is observability: never ask for its confirmation, never let it replace the slices or decisions.
+The full detail opens with a compact **Planning disposition**: Phase 1 intent approved; Phase 2 surface map completed; Phase 3 ledger frozen plus the doubt-pass outcome or explicit N/A reason; Phase 4 slicing completed with slice count, wave count, widest width, execution mode CHOSEN automatically or FORCED, with the reason; Phase 5 approval document ready. It is observability: never ask for its confirmation, never let it replace the slices or decisions.
 
 Three sections, in the operator's language and depth, soft cap ~20 lines:
 
@@ -183,7 +184,7 @@ For the active slice:
 2. **Apply** — over the threshold, launch the `oso-applier` agent with the slice (goal, files, verify criteria), the DECISION BLOCK, the project conventions, the rubric path (`_shared/rubric.md`), and the two coordinates that place the work — the WORKTREE PATH (the main checkout under SEQUENTIAL) and SLICE START. The applier runs on the model the profile names for its role, named in the Launching milestone. The DECISION BLOCK is every ledger decision relevant to this slice, copied from the ledger record BY ID — verbatim and whole, never paraphrased or partial. The slice's Verify line travels as §4 wrote it: its failing check is what `red:` and `green:` exercise, and a `Verify-exception` there is what `red: exception — <its reason>` carries instead.
    - A front-surface slice adds the payload and pin resolution `_shared/front-surface.md`'s PLAN wiring names.
    - On `blocked`: resolve each question with the operator as a question round, record the answers in the ledger, derive any new surface or category the answers reveal and append it with its own questions, then the threshold completes the slice — inline under it, else a FRESH applier — on the updated ledger, never answering for the operator. Under a ROADMAP the policy answers in their place.
-3. **Verify (subagent)** — launch the `oso-verifier` agent with the slice criteria, the zero-warnings commands from the ledger, the rubric path, step 2's DECISION BLOCK unchanged, `applier_proof`, and the same two coordinates, diffing `HEAD` since step 2 — this slice's own pending work alone. The verifier runs on the model the profile names for its role, named in the Launching milestone. Every slice goes to a FRESH verifier, whoever wrote it. `applier_proof` carries exactly the author's `proof:`, `scan:`, and `decisions_used:` blocks, verbatim — never its narrative or other report fields.
+3. **Verify (subagent)** — launch the `oso-verifier` agent with the slice criteria, the zero-warnings commands from the ledger, the rubric path, step 2's DECISION BLOCK unchanged, `applier_proof`, and the same two coordinates, diffing `HEAD` since step 2 — this slice's own pending work alone. The verifier runs on the model the profile names for its role, named in the Launching milestone. Each slice gets its OWN verifier verdict, whoever wrote it: a fresh solo verifier here and for every high-risk slice, and under PARALLEL a low-risk slice may ride a batch verifier per `_shared/parallel.md` — never called independent. `applier_proof` carries exactly the author's `proof:`, `scan:`, and `decisions_used:` blocks, verbatim — never its narrative or other report fields.
    - On `fail`: apply the findings by the threshold above — inline under it, else relaunch the `oso-applier` agent on the same slice assignment. Carry the verifier's findings VERBATIM, every one with its `file:line` and evidence. A refuted claim among the verdict's `claims:` lines is one of those findings and rides the same fix. Loop apply → verify for at most TWO fix rounds, read from `oso-state report`'s `active slice` row; every re-verification is a FRESH verifier. A finding grounded in one of §2 step 6's four rules is never yours to overrule: FIX it, or ESCALATE it to the operator with options and tradeoffs. If they rule to keep it, record their words verbatim as a dated `Operator ruling` amendment to the ledger via `mem_update` naming its `file:line` and rule, then relaunch a FRESH verifier. No other payload you build may instruct a judge away from one of those rules; §3's doubt-pass reconciliation and §7 step 3's bare dispositions stand outside this. Under a ROADMAP, ESCALATE sets the change aside.
    - At two rounds still red, never asking the operator, launch a fresh read-only diagnosis agent (the host's explorer, strong tier, named in the Launching milestone) that reproduces the failing check and names the cause with evidence — `file:line`, check output, the finding — and a changed strategy; journal it, run `oso-state mark diagnosed`, and apply the next fix under it.
    - TWO more fix rounds follow, read as the row's "since diagnosis". Still red, the OPERATOR picks — grant more rounds (counted from the row's rounds at the grant, journaled then), send the remainder to §6 as its own slice, or accept the residual, only a remainder of `nit` findings, never a `blocker` or `structural`. On the route taken run `oso-state mark escalated`, mark `[!]` in the plan, and journal it.
