@@ -11,6 +11,7 @@ import {
   type VerdictRecord,
   VERIFY_GREEN_UNRECEIPTED,
 } from "./record.ts";
+import { isBatchSize } from "./wave.ts";
 
 export type UnreceiptedGreen = Readonly<{ session: string }>;
 
@@ -163,7 +164,7 @@ function armedOutcomesOf(
     const wave = marker.wave === undefined ? null : waveKey(marker.session, marker.wave);
     return [
       {
-        batched: (first.batch ?? 1) >= 2,
+        batched: isBatchSize(first.batch ?? 1),
         rounds: rounds.length,
         firstVerdict: first.verdict,
         wave,

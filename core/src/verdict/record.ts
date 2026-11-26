@@ -148,12 +148,12 @@ export function armingsOf(entries: readonly VerdictLogEntry[]): Armings {
   return { everyArming, armMarkers, newestArmingOfSlice };
 }
 
-export function appendJsonLine<Line extends object>(verdictsFile: string, session: string, lineOf: () => Line): boolean {
+export function appendJsonLine<Line extends object>(jsonlFile: string, session: string, lineOf: () => Line): boolean {
   try {
     const line = `${JSON.stringify(lineOf())}\n`;
     withOwnerOnlyUmask(() => {
-      mkdirSync(path.dirname(verdictsFile), { recursive: true });
-      appendFileSync(verdictsFile, line);
+      mkdirSync(path.dirname(jsonlFile), { recursive: true });
+      appendFileSync(jsonlFile, line);
     });
     return true;
   } catch (error) {

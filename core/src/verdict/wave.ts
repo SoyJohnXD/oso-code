@@ -28,7 +28,11 @@ export type LaunchToken = Readonly<{
 
 export type WaveLog = Readonly<{ waves: readonly WaveRecord[]; tokens: readonly LaunchToken[] }>;
 
-const BATCH_MAX_SLICES = 3;
+export const BATCH_MAX_SLICES = 3;
+
+export function isBatchSize(sliceCount: number): boolean {
+  return sliceCount >= 2;
+}
 
 export function wavesFileFor(stateFile: string): string {
   return path.join(runsDirectoryOf(stateFile), "waves.jsonl");

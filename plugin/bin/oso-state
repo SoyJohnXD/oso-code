@@ -919,10 +919,12 @@ function asJsLiteral(character) {
 // core/src/verdict/grammar.ts
 var RECORDED_VERDICTS = ["pass", "fail", "blocked", "none"];
 var VERDICT_SHAPES = ["valid", "malformed"];
-var SLICE_ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
+var ID_SHAPE = "[A-Za-z0-9][A-Za-z0-9._-]*";
+var SLICE_ID = new RegExp(`^${ID_SHAPE}$`);
 function isSliceId(value) {
   return SLICE_ID.test(value);
 }
+var TOKEN_LINE = new RegExp(`^\\s*token\\s*:\\s*(${ID_SHAPE})\\s*$`, "i");
 
 // core/src/verdict/record.ts
 import { appendFileSync as appendFileSync2, mkdirSync as mkdirSync2 } from "node:fs";
@@ -1442,13 +1444,13 @@ function armingsOf(entries) {
   }
   return { everyArming, armMarkers, newestArmingOfSlice };
 }
-function appendJsonLine(verdictsFile, session, lineOf) {
+function appendJsonLine(jsonlFile, session, lineOf) {
   try {
     const line = `${JSON.stringify(lineOf())}
 `;
     withOwnerOnlyUmask(() => {
-      mkdirSync2(path4.dirname(verdictsFile), { recursive: true });
-      appendFileSync2(verdictsFile, line);
+      mkdirSync2(path4.dirname(jsonlFile), { recursive: true });
+      appendFileSync2(jsonlFile, line);
     });
     return true;
   } catch (error) {
@@ -1508,6 +1510,9 @@ function isTextOrNull(value) {
 import path5 from "node:path";
 var SLICE_RISKS = ["low", "high"];
 var BATCH_MAX_SLICES = 3;
+function isBatchSize(sliceCount) {
+  return sliceCount >= 2;
+}
 function wavesFileFor(stateFile) {
   return path5.join(runsDirectoryOf(stateFile), "waves.jsonl");
 }
@@ -1687,7 +1692,7 @@ function armedOutcomesOf(armMarkers, everyArming, reds) {
     const wave = marker.wave === void 0 ? null : waveKey(marker.session, marker.wave);
     return [
       {
-        batched: (first.batch ?? 1) >= 2,
+        batched: isBatchSize(first.batch ?? 1),
         rounds: rounds.length,
         firstVerdict: first.verdict,
         wave,
@@ -2591,7 +2596,7 @@ function waveStartOf(wave, pairs) {
 function runLaunchToken(sessionId, remaining) {
   const [wave, token, ...slices] = remaining;
   if (wave === void 0 || token === void 0) throw new UsageError();
-  if (!isNameToken(token)) throw new RefusedError("launch-token", `${token} is not a token name`);
+  if (!isSliceId(token)) throw new RefusedError("launch-token", `${token} is not a token name`);
   const stateFile = stateFileFor(process.cwd());
   mkdirSync5(stateRootDirectory(), { recursive: true });
   return withLock(stateFile, sessionId, () => {

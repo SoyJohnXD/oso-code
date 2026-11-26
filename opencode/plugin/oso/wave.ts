@@ -15,6 +15,8 @@ export interface SingleChildLaunch {
 
 export interface BatchPacket {
   slice: string;
+  goal: string;
+  files: string;
   worktree: string;
   sliceStart: string;
   criteria: string;
@@ -208,8 +210,10 @@ function promptOf(launch: WaveChildLaunch): string {
   return applierProof === undefined ? prompt : `${prompt}\n\n${APPLIER_PROOF_HEADER}\n${applierProof}`;
 }
 
-function packetSection({ slice, worktree, sliceStart, criteria, decisionBlock, applierProof }: BatchPacket): string {
+function packetSection({ slice, goal, files, worktree, sliceStart, criteria, decisionBlock, applierProof }: BatchPacket): string {
   const body = [
+    `GOAL:\n${goal}`,
+    `EXPECTED FILES:\n${files}`,
     `WORKTREE PATH: ${worktree}`,
     `SLICE START: ${sliceStart}`,
     `CRITERIA:\n${criteria}`,

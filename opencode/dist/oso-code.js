@@ -951,12 +951,13 @@ function readVerdictShape(text) {
   return verdict === void 0 ? { verdict: "none", verdict_shape: "malformed" } : { verdict, verdict_shape: "valid" };
 }
 var SLICE_LINE = /^\s*slice\s*:\s*(.*?)\s*$/i;
-var SLICE_ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
+var ID_SHAPE = "[A-Za-z0-9][A-Za-z0-9._-]*";
+var SLICE_ID = new RegExp(`^${ID_SHAPE}$`);
 var RISK_HIGH_LINE = /^\s*risk\s*:\s*high(?:\s.*)?$/i;
 function isSliceId(value) {
   return SLICE_ID.test(value);
 }
-var TOKEN_LINE = /^\s*token\s*:\s*([A-Za-z0-9][A-Za-z0-9._-]*)\s*$/i;
+var TOKEN_LINE = new RegExp(`^\\s*token\\s*:\\s*(${ID_SHAPE})\\s*$`, "i");
 function readLaunchToken(text) {
   return text.split(/\r?\n/).map((line) => line.match(TOKEN_LINE)?.[1]).find((token) => token !== void 0);
 }
@@ -1058,13 +1059,13 @@ function armingsOf(entries) {
   }
   return { everyArming, armMarkers, newestArmingOfSlice };
 }
-function appendJsonLine(verdictsFile, session, lineOf) {
+function appendJsonLine(jsonlFile, session, lineOf) {
   try {
     const line = `${JSON.stringify(lineOf())}
 `;
     withOwnerOnlyUmask(() => {
-      mkdirSync3(path4.dirname(verdictsFile), { recursive: true });
-      appendFileSync3(verdictsFile, line);
+      mkdirSync3(path4.dirname(jsonlFile), { recursive: true });
+      appendFileSync3(jsonlFile, line);
     });
     return true;
   } catch (error) {
@@ -1123,6 +1124,10 @@ function isTextOrNull(value) {
 // core/src/verdict/wave.ts
 import path5 from "node:path";
 var SLICE_RISKS = ["low", "high"];
+var BATCH_MAX_SLICES = 3;
+function isBatchSize(sliceCount) {
+  return sliceCount >= 2;
+}
 function wavesFileFor(stateFile) {
   return path5.join(runsDirectoryOf(stateFile), "waves.jsonl");
 }
@@ -1160,7 +1165,6 @@ function tokenOf(fields) {
 
 // core/src/verdict/capture.ts
 var VERDICT_BLOCK_REJECTED = "verdict-block-rejected";
-var BATCH_MIN_SLICES = 2;
 var MALFORMED_READING = { verdict: "none", verdict_shape: "malformed" };
 function isVerifierAgent(agentType) {
   return agentType === VERIFIER_AGENT || agentType.endsWith(`:${VERIFIER_AGENT}`);
@@ -1220,7 +1224,7 @@ function appendTokenBlocks(context, report, tokenName) {
   }
 }
 function discardsHighRisk(block, token) {
-  return block?.verdict_shape === "valid" && block.highRisk === true && token.slices.length >= BATCH_MIN_SLICES;
+  return block?.verdict_shape === "valid" && block.highRisk === true && isBatchSize(token.slices.length);
 }
 function tokenRecordOf(base, token, block) {
   const reading = block?.verdict_shape === "valid" ? { verdict: block.verdict, verdict_shape: "valid" } : MALFORMED_READING;
@@ -5484,8 +5488,12 @@ function promptOf(launch) {
 ${APPLIER_PROOF_HEADER}
 ${applierProof}`;
 }
-function packetSection({ slice, worktree, sliceStart, criteria, decisionBlock, applierProof }) {
+function packetSection({ slice, goal, files, worktree, sliceStart, criteria, decisionBlock, applierProof }) {
   const body = [
+    `GOAL:
+${goal}`,
+    `EXPECTED FILES:
+${files}`,
     `WORKTREE PATH: ${worktree}`,
     `SLICE START: ${sliceStart}`,
     `CRITERIA:
@@ -6283,7 +6291,6 @@ function dropMarkerQuietly(commonDir, sessionId) {
 // opencode/plugin/oso/wave-tool.ts
 var CHILD_BOUND_MS = 30 * 60 * 1e3;
 var MAX_WAVE_CHILDREN = 4;
-var MAX_BATCH_PACKETS = 3;
 function waveTool(host) {
   return {
     name: "oso_wave",
@@ -6311,13 +6318,15 @@ function waveTool(host) {
                   type: "object",
                   properties: {
                     slice: { type: "string", description: "The slice id, unique within the batch." },
+                    goal: { type: "string", description: "The slice's goal, verbatim." },
+                    files: { type: "string", description: "The slice's expected files, verbatim." },
                     worktree: { type: "string", description: "Absolute path of the slice's git worktree." },
                     slice_start: { type: "string", description: "The ref the slice's diff is judged against." },
                     criteria: { type: "string", description: "The slice's verify criteria, verbatim." },
                     decision_block: { type: "string", description: "The ledger decisions relevant to the slice, verbatim." },
                     applier_proof: { type: "string", description: "The slice's applier proof, scan, and decisions_used blocks, verbatim and alone." }
                   },
-                  required: ["slice", "worktree", "slice_start", "criteria", "decision_block", "applier_proof"]
+                  required: ["slice", "goal", "files", "worktree", "slice_start", "criteria", "decision_block", "applier_proof"]
                 }
               }
             },
@@ -6391,8 +6400,8 @@ function parseBatchLaunch(record, index) {
   if (!Array.isArray(packets) || packets.length === 0) {
     throw new Error(`oso_wave child ${index} needs packets carrying at least one packet`);
   }
-  if (packets.length > MAX_BATCH_PACKETS) {
-    throw new Error(`oso_wave child ${index} carries ${packets.length} packets, and a batch holds at most ${MAX_BATCH_PACKETS}`);
+  if (packets.length > BATCH_MAX_SLICES) {
+    throw new Error(`oso_wave child ${index} carries ${packets.length} packets, and a batch holds at most ${BATCH_MAX_SLICES}`);
   }
   const parsed = packets.map((packet, packetIndex) => parsePacket(packet, index, packetIndex));
   const duplicate = parsed.find((packet, position) => parsed.findIndex((other) => other.slice === packet.slice) !== position);
@@ -6403,27 +6412,27 @@ function parseBatchLaunch(record, index) {
 }
 function parsePacket(packet, childIndex, index) {
   const record = typeof packet === "object" && packet !== null ? packet : {};
-  const { slice, worktree, slice_start: sliceStart, criteria, decision_block: decisionBlock, applier_proof: applierProof } = record;
+  const { slice, goal, files, worktree, slice_start: sliceStart, criteria, decision_block: decisionBlock, applier_proof: applierProof } = record;
   const where = `oso_wave child ${childIndex} packet ${index}`;
   if (typeof slice !== "string" || !isSliceId(slice)) {
     throw new Error(`${where} needs a slice id matching the slice id rule, not ${JSON.stringify(slice)}`);
   }
-  if (typeof worktree !== "string" || worktree === "") {
-    throw new Error(`${where} needs a worktree path, not ${JSON.stringify(worktree)}`);
+  return {
+    slice,
+    goal: requiredText(goal, "goal", where),
+    files: requiredText(files, "files", where),
+    worktree: requiredText(worktree, "a worktree path", where),
+    sliceStart: requiredText(sliceStart, "slice_start", where),
+    criteria: requiredText(criteria, "criteria", where),
+    decisionBlock: requiredText(decisionBlock, "decision_block", where),
+    applierProof: requiredText(applierProof, "applier_proof as the applier's three report blocks", where)
+  };
+}
+function requiredText(value, need, where) {
+  if (typeof value !== "string" || value === "") {
+    throw new Error(`${where} needs ${need}, not ${JSON.stringify(value)}`);
   }
-  if (typeof sliceStart !== "string" || sliceStart === "") {
-    throw new Error(`${where} needs slice_start, not ${JSON.stringify(sliceStart)}`);
-  }
-  if (typeof criteria !== "string" || criteria === "") {
-    throw new Error(`${where} needs criteria, not ${JSON.stringify(criteria)}`);
-  }
-  if (typeof decisionBlock !== "string" || decisionBlock === "") {
-    throw new Error(`${where} needs decision_block, not ${JSON.stringify(decisionBlock)}`);
-  }
-  if (typeof applierProof !== "string" || applierProof === "") {
-    throw new Error(`${where} needs applier_proof as the applier's three report blocks, not ${JSON.stringify(applierProof)}`);
-  }
-  return { slice, worktree, sliceStart, criteria, decisionBlock, applierProof };
+  return value;
 }
 function isWaveAgent(value) {
   return value === "applier" || value === "verifier";

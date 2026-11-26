@@ -19,11 +19,9 @@ import {
   VERIFIER_ROLE,
   verdictsFileFor,
 } from "./record.ts";
-import { type LaunchToken, readWaveLog, wavesFileFor } from "./wave.ts";
+import { isBatchSize, type LaunchToken, readWaveLog, wavesFileFor } from "./wave.ts";
 
 const VERDICT_BLOCK_REJECTED = "verdict-block-rejected";
-
-const BATCH_MIN_SLICES = 2;
 
 const MALFORMED_READING = { verdict: "none", verdict_shape: "malformed" } as const;
 
@@ -106,7 +104,7 @@ function appendTokenBlocks(context: CaptureContext, report: string, tokenName: s
 }
 
 function discardsHighRisk(block: SliceBlockReading | undefined, token: LaunchToken): boolean {
-  return block?.verdict_shape === "valid" && block.highRisk === true && token.slices.length >= BATCH_MIN_SLICES;
+  return block?.verdict_shape === "valid" && block.highRisk === true && isBatchSize(token.slices.length);
 }
 
 function tokenRecordOf(base: Omit<VerdictCapture, "verdict" | "verdict_shape">, token: LaunchToken, block: SliceBlockReading | undefined): VerdictCapture {

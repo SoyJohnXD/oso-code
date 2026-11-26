@@ -116,4 +116,5 @@ test("text before the first slice line is not part of any block", () => {
 test("reads the launch token line and none when the report carries no token", () => {
   assert.equal(readLaunchToken("token: t-1.a\nslice: s1\nverdict: pass"), "t-1.a");
   assert.equal(readLaunchToken("slice: s1\nverdict: pass"), undefined);
+  assert.equal(readLaunchToken("token: w1:batch\nslice: s1\nverdict: pass"), undefined);
 });

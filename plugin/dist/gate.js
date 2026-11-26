@@ -933,12 +933,13 @@ function readVerdictShape(text) {
   return verdict === void 0 ? { verdict: "none", verdict_shape: "malformed" } : { verdict, verdict_shape: "valid" };
 }
 var SLICE_LINE = /^\s*slice\s*:\s*(.*?)\s*$/i;
-var SLICE_ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
+var ID_SHAPE = "[A-Za-z0-9][A-Za-z0-9._-]*";
+var SLICE_ID = new RegExp(`^${ID_SHAPE}$`);
 var RISK_HIGH_LINE = /^\s*risk\s*:\s*high(?:\s.*)?$/i;
 function isSliceId(value) {
   return SLICE_ID.test(value);
 }
-var TOKEN_LINE = /^\s*token\s*:\s*([A-Za-z0-9][A-Za-z0-9._-]*)\s*$/i;
+var TOKEN_LINE = new RegExp(`^\\s*token\\s*:\\s*(${ID_SHAPE})\\s*$`, "i");
 function readLaunchToken(text) {
   return text.split(/\r?\n/).map((line) => line.match(TOKEN_LINE)?.[1]).find((token) => token !== void 0);
 }
@@ -1040,13 +1041,13 @@ function armingsOf(entries) {
   }
   return { everyArming, armMarkers, newestArmingOfSlice };
 }
-function appendJsonLine(verdictsFile, session, lineOf) {
+function appendJsonLine(jsonlFile, session, lineOf) {
   try {
     const line = `${JSON.stringify(lineOf())}
 `;
     withOwnerOnlyUmask(() => {
-      mkdirSync3(path4.dirname(verdictsFile), { recursive: true });
-      appendFileSync3(verdictsFile, line);
+      mkdirSync3(path4.dirname(jsonlFile), { recursive: true });
+      appendFileSync3(jsonlFile, line);
     });
     return true;
   } catch (error) {
@@ -1105,6 +1106,9 @@ function isTextOrNull(value) {
 // core/src/verdict/wave.ts
 import path5 from "node:path";
 var SLICE_RISKS = ["low", "high"];
+function isBatchSize(sliceCount) {
+  return sliceCount >= 2;
+}
 function wavesFileFor(stateFile) {
   return path5.join(runsDirectoryOf(stateFile), "waves.jsonl");
 }
@@ -1142,7 +1146,6 @@ function tokenOf(fields) {
 
 // core/src/verdict/capture.ts
 var VERDICT_BLOCK_REJECTED = "verdict-block-rejected";
-var BATCH_MIN_SLICES = 2;
 var MALFORMED_READING = { verdict: "none", verdict_shape: "malformed" };
 function isVerifierAgent(agentType) {
   return agentType === VERIFIER_AGENT || agentType.endsWith(`:${VERIFIER_AGENT}`);
@@ -1202,7 +1205,7 @@ function appendTokenBlocks(context, report, tokenName) {
   }
 }
 function discardsHighRisk(block, token) {
-  return block?.verdict_shape === "valid" && block.highRisk === true && token.slices.length >= BATCH_MIN_SLICES;
+  return block?.verdict_shape === "valid" && block.highRisk === true && isBatchSize(token.slices.length);
 }
 function tokenRecordOf(base, token, block) {
   const reading = block?.verdict_shape === "valid" ? { verdict: block.verdict, verdict_shape: "valid" } : MALFORMED_READING;

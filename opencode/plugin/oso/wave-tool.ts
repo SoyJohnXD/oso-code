@@ -1,6 +1,6 @@
 import { commonDirOf } from "./identity.ts";
 import { DIRECT_CALL, type OsoTool, type ToolHost } from "./tool.ts";
-import { isSliceId, readSliceBlocks, type ParsedAgentVerdict } from "@oso-code/core";
+import { BATCH_MAX_SLICES, isSliceId, readSliceBlocks, type ParsedAgentVerdict } from "@oso-code/core";
 import {
   pinnedSessionTransport,
   runWave,
@@ -13,7 +13,6 @@ import {
 
 const CHILD_BOUND_MS = 30 * 60 * 1000;
 const MAX_WAVE_CHILDREN = 4;
-const MAX_BATCH_PACKETS = 3;
 
 export function waveTool(host: ToolHost): OsoTool {
   return {
@@ -48,13 +47,15 @@ export function waveTool(host: ToolHost): OsoTool {
                   type: "object",
                   properties: {
                     slice: { type: "string", description: "The slice id, unique within the batch." },
+                    goal: { type: "string", description: "The slice's goal, verbatim." },
+                    files: { type: "string", description: "The slice's expected files, verbatim." },
                     worktree: { type: "string", description: "Absolute path of the slice's git worktree." },
                     slice_start: { type: "string", description: "The ref the slice's diff is judged against." },
                     criteria: { type: "string", description: "The slice's verify criteria, verbatim." },
                     decision_block: { type: "string", description: "The ledger decisions relevant to the slice, verbatim." },
                     applier_proof: { type: "string", description: "The slice's applier proof, scan, and decisions_used blocks, verbatim and alone." },
                   },
-                  required: ["slice", "worktree", "slice_start", "criteria", "decision_block", "applier_proof"],
+                  required: ["slice", "goal", "files", "worktree", "slice_start", "criteria", "decision_block", "applier_proof"],
                 },
               },
             },
@@ -131,8 +132,8 @@ function parseBatchLaunch(record: Record<string, unknown>, index: number): WaveC
   if (!Array.isArray(packets) || packets.length === 0) {
     throw new Error(`oso_wave child ${index} needs packets carrying at least one packet`);
   }
-  if (packets.length > MAX_BATCH_PACKETS) {
-    throw new Error(`oso_wave child ${index} carries ${packets.length} packets, and a batch holds at most ${MAX_BATCH_PACKETS}`);
+  if (packets.length > BATCH_MAX_SLICES) {
+    throw new Error(`oso_wave child ${index} carries ${packets.length} packets, and a batch holds at most ${BATCH_MAX_SLICES}`);
   }
   const parsed = packets.map((packet, packetIndex) => parsePacket(packet, index, packetIndex));
   const duplicate = parsed.find((packet, position) => parsed.findIndex((other) => other.slice === packet.slice) !== position);
@@ -144,27 +145,28 @@ function parseBatchLaunch(record: Record<string, unknown>, index: number): WaveC
 
 function parsePacket(packet: unknown, childIndex: number, index: number): BatchPacket {
   const record = (typeof packet === "object" && packet !== null ? packet : {}) as Record<string, unknown>;
-  const { slice, worktree, slice_start: sliceStart, criteria, decision_block: decisionBlock, applier_proof: applierProof } = record;
+  const { slice, goal, files, worktree, slice_start: sliceStart, criteria, decision_block: decisionBlock, applier_proof: applierProof } = record;
   const where = `oso_wave child ${childIndex} packet ${index}`;
   if (typeof slice !== "string" || !isSliceId(slice)) {
     throw new Error(`${where} needs a slice id matching the slice id rule, not ${JSON.stringify(slice)}`);
   }
-  if (typeof worktree !== "string" || worktree === "") {
-    throw new Error(`${where} needs a worktree path, not ${JSON.stringify(worktree)}`);
+  return {
+    slice,
+    goal: requiredText(goal, "goal", where),
+    files: requiredText(files, "files", where),
+    worktree: requiredText(worktree, "a worktree path", where),
+    sliceStart: requiredText(sliceStart, "slice_start", where),
+    criteria: requiredText(criteria, "criteria", where),
+    decisionBlock: requiredText(decisionBlock, "decision_block", where),
+    applierProof: requiredText(applierProof, "applier_proof as the applier's three report blocks", where),
+  };
+}
+
+function requiredText(value: unknown, need: string, where: string): string {
+  if (typeof value !== "string" || value === "") {
+    throw new Error(`${where} needs ${need}, not ${JSON.stringify(value)}`);
   }
-  if (typeof sliceStart !== "string" || sliceStart === "") {
-    throw new Error(`${where} needs slice_start, not ${JSON.stringify(sliceStart)}`);
-  }
-  if (typeof criteria !== "string" || criteria === "") {
-    throw new Error(`${where} needs criteria, not ${JSON.stringify(criteria)}`);
-  }
-  if (typeof decisionBlock !== "string" || decisionBlock === "") {
-    throw new Error(`${where} needs decision_block, not ${JSON.stringify(decisionBlock)}`);
-  }
-  if (typeof applierProof !== "string" || applierProof === "") {
-    throw new Error(`${where} needs applier_proof as the applier's three report blocks, not ${JSON.stringify(applierProof)}`);
-  }
-  return { slice, worktree, sliceStart, criteria, decisionBlock, applierProof };
+  return value;
 }
 
 function isWaveAgent(value: unknown): value is WaveAgent {

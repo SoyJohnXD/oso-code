@@ -319,7 +319,7 @@ function waveStartOf(wave: string, pairs: readonly string[]): Readonly<{ members
 function runLaunchToken(sessionId: string, remaining: readonly string[]): number {
   const [wave, token, ...slices] = remaining;
   if (wave === undefined || token === undefined) throw new UsageError();
-  if (!store.isNameToken(token)) throw new RefusedError("launch-token", `${token} is not a token name`);
+  if (!isSliceId(token)) throw new RefusedError("launch-token", `${token} is not a token name`);
   const stateFile = store.stateFileFor(process.cwd());
   mkdirSync(store.stateRootDirectory(), { recursive: true });
   return store.withLock(stateFile, sessionId, () => {

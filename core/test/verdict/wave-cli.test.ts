@@ -110,6 +110,16 @@ describe("oso-state launch-token", () => {
     });
   });
 
+  test("refuses a token name the capture grammar cannot read", () => {
+    withStateSandbox("workspace", (sandbox) => {
+      startWave(sandbox, "s1=low", "s2=low");
+      const refused = oso(sandbox, "launch-token", "wave-1", "w1:batch", "s1", "s2");
+      assert.equal(refused.exit, 1);
+      assert.equal(refused.stderr, "oso-state: launch-token refused: w1:batch is not a token name\n");
+      assert.equal(linesOf(sandbox, WAVES_LOG).filter((entry) => entry["kind"] === "token").length, 0);
+    });
+  });
+
   test("refuses a batch token with 4 ids", () => {
     withStateSandbox("workspace", (sandbox) => {
       startWave(sandbox, "s1=low", "s2=low", "s3=low", "s4=low");

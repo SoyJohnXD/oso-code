@@ -43,14 +43,15 @@ export type SliceBlockReading =
   | { slice?: string; verdict: "none"; verdict_shape: "malformed" };
 
 const SLICE_LINE = /^\s*slice\s*:\s*(.*?)\s*$/i;
-const SLICE_ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
+const ID_SHAPE = "[A-Za-z0-9][A-Za-z0-9._-]*";
+const SLICE_ID = new RegExp(`^${ID_SHAPE}$`);
 const RISK_HIGH_LINE = /^\s*risk\s*:\s*high(?:\s.*)?$/i;
 
 export function isSliceId(value: string): boolean {
   return SLICE_ID.test(value);
 }
 
-const TOKEN_LINE = /^\s*token\s*:\s*([A-Za-z0-9][A-Za-z0-9._-]*)\s*$/i;
+const TOKEN_LINE = new RegExp(`^\\s*token\\s*:\\s*(${ID_SHAPE})\\s*$`, "i");
 
 export function readLaunchToken(text: string): string | undefined {
   return text
