@@ -1,6 +1,6 @@
 import path from "node:path";
 import { isoTimestamp, jsonObjectOf, readFileIfPresent, runsDirectoryOf } from "../state/store.ts";
-import { appendEntry } from "./record.ts";
+import { appendJsonLine } from "./record.ts";
 
 export const SLICE_RISKS = ["low", "high"] as const;
 
@@ -35,11 +35,11 @@ export function wavesFileFor(stateFile: string): string {
 }
 
 export function appendWave(wavesFile: string, wave: Omit<WaveRecord, "kind" | "time">): boolean {
-  return appendEntry(wavesFile, wave.session, () => ({ kind: "wave", ...wave, time: isoTimestamp() }));
+  return appendJsonLine<WaveRecord>(wavesFile, wave.session, () => ({ kind: "wave", ...wave, time: isoTimestamp() }));
 }
 
 export function appendLaunchToken(wavesFile: string, token: Omit<LaunchToken, "kind" | "time">): boolean {
-  return appendEntry(wavesFile, token.session, () => ({ kind: "token", ...token, time: isoTimestamp() }));
+  return appendJsonLine<LaunchToken>(wavesFile, token.session, () => ({ kind: "token", ...token, time: isoTimestamp() }));
 }
 
 export function readWaveLog(wavesFile: string): WaveLog {
@@ -84,11 +84,11 @@ function waveOf(fields: Record<string, unknown>): WaveRecord | undefined {
   if (kind !== "wave" || typeof wave !== "string" || typeof session !== "string" || typeof time !== "string") return undefined;
   if (change !== null && typeof change !== "string") return undefined;
   if (!Array.isArray(slices)) return undefined;
-  const members = slices.flatMap((member: unknown) => waveSliceOf(member) ?? []);
+  const members = slices.flatMap((member: unknown) => recordedWaveSliceOf(member) ?? []);
   return members.length === slices.length ? { kind, wave, slices: members, session, change, time } : undefined;
 }
 
-function waveSliceOf(member: unknown): WaveSlice | undefined {
+function recordedWaveSliceOf(member: unknown): WaveSlice | undefined {
   if (typeof member !== "object" || member === null) return undefined;
   const { slice, risk } = member as Record<string, unknown>;
   const known = SLICE_RISKS.find((value) => value === risk);

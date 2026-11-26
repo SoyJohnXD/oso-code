@@ -1,6 +1,6 @@
 import { commonDirOf } from "./identity.ts";
 import { DIRECT_CALL, type OsoTool, type ToolHost } from "./tool.ts";
-import type { ParsedAgentVerdict } from "@oso-code/core";
+import { isSliceId, type ParsedAgentVerdict } from "@oso-code/core";
 import {
   pinnedSessionTransport,
   runWave,
@@ -13,7 +13,6 @@ import {
 const CHILD_BOUND_MS = 30 * 60 * 1000;
 const MAX_WAVE_CHILDREN = 4;
 const MAX_BATCH_PACKETS = 3;
-const SLICE_ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 
 export function waveTool(host: ToolHost): OsoTool {
   return {
@@ -143,8 +142,8 @@ function parsePacket(packet: unknown, childIndex: number, index: number): BatchP
   const record = (typeof packet === "object" && packet !== null ? packet : {}) as Record<string, unknown>;
   const { slice, worktree, applier_proof: applierProof } = record;
   const where = `oso_wave child ${childIndex} packet ${index}`;
-  if (typeof slice !== "string" || !SLICE_ID.test(slice)) {
-    throw new Error(`${where} needs a slice id matching ${SLICE_ID}, not ${JSON.stringify(slice)}`);
+  if (typeof slice !== "string" || !isSliceId(slice)) {
+    throw new Error(`${where} needs a slice id matching the slice id rule, not ${JSON.stringify(slice)}`);
   }
   if (typeof worktree !== "string" || worktree === "") {
     throw new Error(`${where} needs a worktree path, not ${JSON.stringify(worktree)}`);

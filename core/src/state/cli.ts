@@ -4,6 +4,7 @@ import { abstractionScanReport } from "../scan/abstraction-scan.ts";
 import { ScanFailure } from "../scan/changed-lines.ts";
 import { commentScanReport } from "../scan/comment-scan.ts";
 import { ereReads } from "../shell/ere.ts";
+import { isSliceId } from "../verdict/grammar.ts";
 import { greenReceiptOf, type GreenReceipt } from "../verdict/receipt.ts";
 import {
   appendMarker,
@@ -280,13 +281,13 @@ function sliceOfArmedWave(stateFile: string, mark: string, slice: string): strin
 function runWave(sessionId: string, remaining: readonly string[]): number {
   const [subverb, wave, ...pairs] = remaining;
   if (subverb !== "start" || wave === undefined) throw new UsageError();
-  const refusal = waveStartRefusal(wave, pairs);
-  if (refusal !== undefined) throw new RefusedError("wave start", refusal);
+  const start = waveStartOf(wave, pairs);
+  if ("refusal" in start) throw new RefusedError("wave start", start.refusal);
+  const { members } = start;
   const stateFile = store.stateFileFor(process.cwd());
   mkdirSync(store.stateRootDirectory(), { recursive: true });
   return store.withLock(stateFile, sessionId, () => {
     const change = store.recordedStateValue(store.readFileIfPresent(stateFile, "skip") ?? "", "auto_change");
-    const members = pairs.flatMap((pair) => waveSliceOf(pair) ?? []);
     if (!appendWave(wavesFileFor(stateFile), { wave, slices: members, session: sessionId, change })) {
       throw new RefusedError("wave start", "the wave record could not be written");
     }
@@ -297,21 +298,22 @@ function runWave(sessionId: string, remaining: readonly string[]): number {
   });
 }
 
-function waveSliceOf(pair: string): WaveSlice | undefined {
+function slicePairOf(pair: string): WaveSlice | undefined {
   const eq = pair.lastIndexOf("=");
   const slice = pair.slice(0, eq);
   const risk = SLICE_RISKS.find((value) => value === pair.slice(eq + 1));
-  return eq < 1 || risk === undefined || !store.isNameToken(slice) ? undefined : { slice, risk };
+  return eq < 1 || risk === undefined || !isSliceId(slice) ? undefined : { slice, risk };
 }
 
-function waveStartRefusal(wave: string, pairs: readonly string[]): string | undefined {
-  if (!store.isNameToken(wave)) return `${wave} is not a wave name`;
-  if (pairs.length === 0) return "a wave lists at least one <slice>=<low|high>";
-  const malformed = pairs.find((pair) => waveSliceOf(pair) === undefined);
-  if (malformed !== undefined) return `${malformed} is not <slice>=<low|high>`;
-  const ids = pairs.map((pair) => pair.slice(0, pair.lastIndexOf("=")));
-  const repeated = ids.find((slice, index) => ids.indexOf(slice) !== index);
-  return repeated === undefined ? undefined : `slice ${repeated} is listed twice`;
+function waveStartOf(wave: string, pairs: readonly string[]): Readonly<{ members: readonly WaveSlice[] }> | Readonly<{ refusal: string }> {
+  if (!store.isNameToken(wave)) return { refusal: `${wave} is not a wave name` };
+  if (pairs.length === 0) return { refusal: "a wave lists at least one <slice>=<low|high>" };
+  const parsed = pairs.map(slicePairOf);
+  const malformed = pairs[parsed.indexOf(undefined)];
+  if (malformed !== undefined) return { refusal: `${malformed} is not <slice>=<low|high>` };
+  const members = parsed.flatMap((member) => member ?? []);
+  const repeated = members.find(({ slice }, index) => members.findIndex((other) => other.slice === slice) !== index);
+  return repeated === undefined ? { members } : { refusal: `slice ${repeated.slice} is listed twice` };
 }
 
 function runLaunchToken(sessionId: string, remaining: readonly string[]): number {

@@ -75,20 +75,20 @@ test("a legacy single-verdict report keeps its last verdict and has no slice blo
   assert.deepEqual(readSliceBlocks(legacy), []);
 });
 
-test("a block with a risk high line exposes the risk and its reason", () => {
+test("a block with a risk high line is flagged high risk", () => {
   const [block] = readSliceBlocks("slice: s1\nverdict: pass\nrisk: high touches the auth session store\n");
   assert.deepEqual(block, {
     slice: "s1",
     verdict: "pass",
     verdict_shape: "valid",
-    risk: { level: "high", reason: "touches the auth session store" },
+    highRisk: true,
   });
 });
 
 test("a risk line belongs to its own block only", () => {
   const readings = readSliceBlocks("slice: s1\nverdict: pass\nslice: s2\nverdict: pass\nrisk: high migration\n");
-  assert.equal(readings[0]!.verdict_shape === "valid" && readings[0]!.risk, undefined);
-  assert.equal(readings[1]!.verdict_shape === "valid" && readings[1]!.risk?.reason, "migration");
+  assert.equal(readings[0]!.verdict_shape === "valid" && readings[0]!.highRisk, undefined);
+  assert.equal(readings[1]!.verdict_shape === "valid" && readings[1]!.highRisk, true);
 });
 
 test("a block without a verdict is malformed for that block and keeps its sibling", () => {

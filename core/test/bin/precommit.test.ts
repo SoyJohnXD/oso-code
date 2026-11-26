@@ -146,6 +146,26 @@ describe("the git pre-commit hook's own boundary", { skip: skipUnlessSpawnable(P
       assert.equal(runOnBranch("main", NAMED_WINDOW).exit, 0);
     });
 
+    test("a detached HEAD is a named case that goes through", () => {
+      const run = withStateSandbox("workspace", (sandbox) => {
+        const repository = sandbox.seedGitRepository("proj");
+        spawnSync("git", ["-C", repository, "checkout", "-q", "--detach"]);
+        const key = createHash("sha256").update(path.join(repository, ".git")).digest("hex");
+        sandbox.seed({ [`.local/state/oso-code/${key}.state`]: NAMED_WINDOW });
+        return sandbox.run(PRE_COMMIT_HOOK, [], { env: HOST_SESSION, cwd: repository });
+      });
+      assert.equal(run.exit, 0);
+    });
+
+    test("a git failure while the window is named refuses the commit with its cause", () => {
+      const run = withStateSandbox("workspace", (sandbox) => {
+        sandbox.seed({ [STATE_FILE]: NAMED_WINDOW });
+        return sandbox.run(PRE_COMMIT_HOOK, [], { env: HOST_SESSION });
+      });
+      assert.equal(run.exit, 1);
+      assert.match(run.stderr, /could not be read \(.*\), so the commit is refused/);
+    });
+
     test("an unnamed wave window and a sequential green leave every branch free", () => {
       assert.equal(runOnBranch("oso/alpha/s2", NAMED_WINDOW.replace("green_slice=s1\n", "")).exit, 0);
       assert.equal(runOnBranch("oso/alpha/s2", NAMED_WINDOW.replace("wave-1", "3")).exit, 0);

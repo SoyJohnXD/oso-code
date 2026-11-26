@@ -4677,7 +4677,7 @@
       }
     },
     {
-      "name": "commit gate: a commit inside a named green window defers to the git layer when the branch is unresolvable",
+      "name": "commit gate: a commit inside a named green window is refused when the branch cannot be read",
       "argv": [],
       "env": {},
       "state_before": {
@@ -4687,9 +4687,17 @@
       "stdin": "{\"session_id\":\"test-session\",\"transcript_path\":\"{home}/.claude/projects/oso-code/test-session.jsonl\",\"cwd\":\"{cwd}\",\"permission_mode\":\"default\",\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"git commit -m y\",\"description\":\"regression case\"}}",
       "expect": {
         "exit": 0,
-        "stdout": "",
+        "stdout": {
+          "contains": [
+            "\"permissionDecision\":\"deny\""
+          ]
+        },
         "stderr": "",
-        "events_appended": []
+        "events_appended": [
+          {
+            "event": "commit-denied"
+          }
+        ]
       }
     }
   ]

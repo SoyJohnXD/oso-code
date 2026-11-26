@@ -12,6 +12,7 @@ import { readLaunchToken, readSliceBlocks, readVerdictShape, type SliceBlockRead
 import {
   appendMarker,
   appendVerdict,
+  BATCH_BLOCKED,
   RISK_HIGH_DISCARDED,
   TELEMETRY_WRITE_FAILED,
   type VerdictCapture,
@@ -21,6 +22,8 @@ import {
 import { type LaunchToken, readWaveLog, wavesFileFor } from "./wave.ts";
 
 const VERDICT_BLOCK_REJECTED = "verdict-block-rejected";
+
+const BATCH_MIN_SLICES = 2;
 
 const MALFORMED_READING = { verdict: "none", verdict_shape: "malformed" } as const;
 
@@ -44,20 +47,39 @@ export function captureVerifierReport(report: VerifierReport): void {
   }
 }
 
+type CaptureContext = Readonly<{
+  verdictsFile: string;
+  wavesFile: string;
+  session: string;
+  change: string | null;
+  base: Omit<VerdictCapture, "slice" | "verdict" | "verdict_shape">;
+}>;
+
 function appendReportToItsRepository({ host, cwd, session, model, report }: VerifierReport): void {
   if (!isDirectory(cwd)) return;
   const stateFile = stateFileFor(cwd);
   const state = readFileIfPresent(stateFile);
   if (state === undefined) return;
-  const verdictsFile = verdictsFileFor(stateFile);
   const change = recordedStateValue(state, "auto_change");
-  const base = { host, session, change, role: VERIFIER_ROLE, model };
+  const context: CaptureContext = {
+    verdictsFile: verdictsFileFor(stateFile),
+    wavesFile: wavesFileFor(stateFile),
+    session,
+    change,
+    base: { host, session, change, role: VERIFIER_ROLE, model },
+  };
   const tokenName = readLaunchToken(report);
-  if (tokenName === undefined) {
-    appendVerdict(verdictsFile, { ...base, slice: recordedStateValue(state, "active_slice"), ...readVerdictShape(report) });
-    return;
-  }
-  const token = readWaveLog(wavesFileFor(stateFile)).tokens.filter((registered) => registered.token === tokenName).at(-1);
+  if (tokenName === undefined) appendSingleVerdict(context, report, recordedStateValue(state, "active_slice"));
+  else appendTokenBlocks(context, report, tokenName);
+}
+
+function appendSingleVerdict({ verdictsFile, base }: CaptureContext, report: string, slice: string | null): void {
+  appendVerdict(verdictsFile, { ...base, slice, ...readVerdictShape(report) });
+}
+
+function appendTokenBlocks(context: CaptureContext, report: string, tokenName: string): void {
+  const { verdictsFile, wavesFile, session, change, base } = context;
+  const token = readWaveLog(wavesFile).tokens.filter((registered) => registered.token === tokenName).at(-1);
   if (token === undefined) {
     logEvent({ event: VERDICT_BLOCK_REJECTED, session, command: `token ${tokenName} is not registered` });
     return;
@@ -68,14 +90,23 @@ function appendReportToItsRepository({ host, cwd, session, model, report }: Veri
       logEvent({ event: VERDICT_BLOCK_REJECTED, session, command: `slice ${block.slice} is not under token ${token.token}` });
     }
   }
+  const batchBlocked = blocks.length === 0 && readVerdictShape(report).verdict === "blocked";
   for (const slice of token.slices) {
+    if (batchBlocked) {
+      appendMarker(verdictsFile, { kind: BATCH_BLOCKED, slice, session, change });
+      continue;
+    }
     const block = blocks.find((candidate) => candidate.slice === slice);
-    if (block?.verdict_shape === "valid" && block.risk !== undefined) {
+    if (discardsHighRisk(block, token)) {
       appendMarker(verdictsFile, { kind: RISK_HIGH_DISCARDED, slice, session, change });
       continue;
     }
     appendVerdict(verdictsFile, tokenRecordOf({ ...base, slice }, token, block));
   }
+}
+
+function discardsHighRisk(block: SliceBlockReading | undefined, token: LaunchToken): boolean {
+  return block?.verdict_shape === "valid" && block.highRisk === true && token.slices.length >= BATCH_MIN_SLICES;
 }
 
 function tokenRecordOf(base: Omit<VerdictCapture, "verdict" | "verdict_shape">, token: LaunchToken, block: SliceBlockReading | undefined): VerdictCapture {

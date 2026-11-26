@@ -17,7 +17,7 @@ export type UnreceiptedGreen = Readonly<{ session: string }>;
 export type IntegrationRed = Readonly<{ session: string; time: number }>;
 
 export type GreensRead =
-  | Readonly<{ kind: "read"; greens: readonly UnreceiptedGreen[]; integrationReds?: readonly IntegrationRed[] }>
+  | Readonly<{ kind: "read"; greens: readonly UnreceiptedGreen[]; integrationReds: readonly IntegrationRed[] }>
   | Readonly<{ kind: "omitted"; reason: string }>;
 
 export type ModelVerdicts = Readonly<{ model: string | null } & Record<RecordedVerdict, number>>;
@@ -68,7 +68,7 @@ export function verdictMetrics(log: VerdictLog, greensRead: GreensRead, armedSli
     .filter((rounds) => rounds.length > 0);
   const verifierRecords = roundsOfEachSlice.flat();
   const firstFailSlices = roundsOfEachSlice.filter((rounds) => rounds[0]?.verdict === "fail").length;
-  const reds = greensRead.kind === "read" ? (greensRead.integrationReds ?? []) : null;
+  const reds = greensRead.kind === "read" ? greensRead.integrationReds : null;
   const armed = armedOutcomesOf(armMarkers, everyArming, reds ?? []);
   const batched = classMetrics(armed.filter((outcome) => outcome.batched));
   const solo = classMetrics(armed.filter((outcome) => !outcome.batched));
@@ -173,8 +173,10 @@ function armedOutcomesOf(
   });
 }
 
+const WAVE_KEY_SEPARATOR = "\u0000";
+
 function waveKey(session: string, wave: string): string {
-  return `${session}\u0000${wave}`;
+  return `${session}${WAVE_KEY_SEPARATOR}${wave}`;
 }
 
 function waveStartsOf(armMarkers: readonly Marker[]): ReadonlyMap<string, number> {
@@ -189,15 +191,19 @@ function waveStartsOf(armMarkers: readonly Marker[]): ReadonlyMap<string, number
 
 function waveOfRed(waveStarts: ReadonlyMap<string, number>, red: IntegrationRed): string | undefined {
   const candidates = [...waveStarts].filter(
-    ([key, start]) => key.startsWith(`${red.session}\u0000`) && start <= red.time,
+    ([key, start]) => key.startsWith(`${red.session}${WAVE_KEY_SEPARATOR}`) && start <= red.time,
   );
   return candidates.sort(([, left], [, right]) => right - left)[0]?.[0];
+}
+
+function escapedFirstPass(outcome: ArmedOutcome): boolean {
+  return outcome.inRedWave && outcome.firstVerdict === "pass";
 }
 
 function classMetrics(outcomes: readonly ArmedOutcome[]): ArmingClassMetrics {
   const firstFails = outcomes.filter((outcome) => outcome.firstVerdict === "fail").length;
   const inWave = outcomes.filter((outcome) => outcome.wave !== null);
-  const escaped = inWave.filter((outcome) => outcome.inRedWave && outcome.firstVerdict === "pass").length;
+  const escaped = inWave.filter(escapedFirstPass).length;
   return {
     slices: outcomes.length,
     first_fail_slices: firstFails,
@@ -211,7 +217,7 @@ function classMetrics(outcomes: readonly ArmedOutcome[]): ArmingClassMetrics {
 
 function escapesOf(armed: readonly ArmedOutcome[], greensRead: GreensRead): Escapes {
   if (greensRead.kind === "omitted") return { omitted: greensRead.reason };
-  const escaped = armed.filter((outcome) => outcome.batched && outcome.inRedWave && outcome.firstVerdict === "pass");
+  const escaped = armed.filter((outcome) => outcome.batched && escapedFirstPass(outcome));
   return { waves: new Set(escaped.map((outcome) => outcome.wave)).size, batched_slices: escaped.length };
 }
 

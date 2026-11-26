@@ -34,7 +34,7 @@ const EVENTS = [
 
 describe("the verdict report reads the records after each arm marker of their slice", () => {
   const log = readVerdicts(FIXTURE);
-  const metrics = verdictMetrics(log, { kind: "read", greens: unreceiptedGreensIn(EVENTS) }, null);
+  const metrics = verdictMetrics(log, { kind: "read", greens: unreceiptedGreensIn(EVENTS), integrationReds: [] }, null);
 
   test("two of four armings opened on a fail, so the first-fail rate is 50.0 %", () => {
     assert.equal(metrics.slices, 4);
@@ -237,12 +237,12 @@ describe("the report splits batched from solo armings, counts escapes and recomm
   });
 
   test("below 20 batched slices the recommendation says the sample is too small", () => {
-    const metrics = verdictMetrics({ entries: batchedWaves(9), skippedLines: 0 }, { kind: "read", greens: [] }, null);
+    const metrics = verdictMetrics({ entries: batchedWaves(9), skippedLines: 0 }, { kind: "read", greens: [], integrationReds: [] }, null);
     assert.equal(metrics.recommendation, "none — sample too small: 18 of 20 batched slices needed");
   });
 
   test("20 batched slices with no escape and no worse first-fail rate keep batching", () => {
-    const metrics = verdictMetrics({ entries: batchedWaves(10), skippedLines: 0 }, { kind: "read", greens: [] }, null);
+    const metrics = verdictMetrics({ entries: batchedWaves(10), skippedLines: 0 }, { kind: "read", greens: [], integrationReds: [] }, null);
     assert.match(metrics.recommendation, /^keep — /);
   });
 
