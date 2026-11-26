@@ -1422,17 +1422,19 @@ function isVerifierRecord(entry) {
 }
 function armingsOf(entries) {
   const everyArming = [];
+  const armMarkers = [];
   const newestArmingOfSlice = /* @__PURE__ */ new Map();
   for (const entry of entries) {
     if (isMarkerOf("arm", entry)) {
       const arming = [];
       everyArming.push(arming);
+      armMarkers.push(entry);
       newestArmingOfSlice.set(entry.slice, arming);
       continue;
     }
     if (entry.slice !== null) newestArmingOfSlice.get(entry.slice)?.push(entry);
   }
-  return { everyArming, newestArmingOfSlice };
+  return { everyArming, armMarkers, newestArmingOfSlice };
 }
 function appendEntry(verdictsFile, session, entryOf) {
   try {
@@ -1605,16 +1607,26 @@ function refusalReason(slice, record) {
 
 // core/src/verdict/report.ts
 function verdictMetrics(log, greensRead, armedSlice) {
-  const { everyArming } = armingsOf(log.entries);
+  const { everyArming, armMarkers } = armingsOf(log.entries);
   const roundsOfEachSlice = everyArming.map((arming) => arming.filter(isVerifierRecord)).filter((rounds) => rounds.length > 0);
   const verifierRecords = roundsOfEachSlice.flat();
   const firstFailSlices = roundsOfEachSlice.filter((rounds) => rounds[0]?.verdict === "fail").length;
+  const reds = greensRead.kind === "read" ? greensRead.integrationReds ?? [] : null;
+  const armed = armedOutcomesOf(armMarkers, everyArming, reds ?? []);
+  const batched = classMetrics(armed.filter((outcome) => outcome.batched));
+  const solo = classMetrics(armed.filter((outcome) => !outcome.batched));
+  const escapes = escapesOf(armed, greensRead);
   return {
     active_slice: activeSliceOf(log.entries, armedSlice),
+    wave_slices: waveSlicesOf(log.entries, armMarkers, armedSlice),
     slices: roundsOfEachSlice.length,
     first_fail_slices: firstFailSlices,
     first_fail_rate_percent: roundsOfEachSlice.length === 0 ? null : oneDecimal(firstFailSlices * 100 / roundsOfEachSlice.length),
     rounds_per_slice: roundsSummary(roundsOfEachSlice.map((rounds) => rounds.length)),
+    batched,
+    solo,
+    escapes,
+    recommendation: recommendationOf(batched, solo, escapes),
     escalated_slices: everyArming.filter((arming) => arming.some((entry) => isMarkerOf("escalated", entry))).length,
     verdicts_by_model: verdictsByModel(verifierRecords),
     malformed: verifierRecords.filter((record) => record.verdict_shape === "malformed").length,
@@ -1628,6 +1640,13 @@ function unreceiptedGreensIn(eventsText) {
     return event === VERIFY_GREEN_UNRECEIPTED && typeof session === "string" ? [{ session }] : [];
   });
 }
+function integrationRedsIn(eventsText) {
+  return eventsText.split("\n").flatMap((line) => {
+    const { session, event, ts } = jsonObjectOf(line) ?? {};
+    const time = typeof ts === "string" ? Date.parse(ts) : Number.NaN;
+    return event === INTEGRATION_RED && typeof session === "string" && !Number.isNaN(time) ? [{ session, time }] : [];
+  });
+}
 function renderReportTable(metrics) {
   const rows = [
     ["active slice", [activeSliceText(metrics)]],
@@ -1638,11 +1657,97 @@ function renderReportTable(metrics) {
     ["verdicts by model", modelRowsText(metrics.verdicts_by_model)],
     ["malformed reports", [String(metrics.malformed)]],
     ["skipped lines", [String(metrics.skipped_lines)]],
-    ["unreceipted greens", [unreceiptedGreensText(metrics)]]
+    ["unreceipted greens", [unreceiptedGreensText(metrics)]],
+    ...waveSliceRows(metrics),
+    ["batched slices", [classText(metrics.batched)]],
+    ["solo slices", [classText(metrics.solo)]],
+    ["escapes", [escapesText(metrics.escapes)]],
+    ["recommendation", [metrics.recommendation]]
   ];
   const labelWidth = Math.max(...rows.map(([label]) => label.length)) + 2;
   return rows.flatMap(([label, values]) => values.map((value, index) => `${(index === 0 ? label : "").padEnd(labelWidth)}${value}`)).map((line) => `${line}
 `).join("");
+}
+var INTEGRATION_RED = "integration-red";
+var MIN_BATCHED_SLICES = 20;
+var RARE_ESCAPE_PERCENT = 10;
+function armedOutcomesOf(armMarkers, everyArming, reds) {
+  const waveStarts = waveStartsOf(armMarkers);
+  return everyArming.flatMap((arming, index) => {
+    const rounds = arming.filter(isVerifierRecord);
+    const first = rounds[0];
+    if (first === void 0) return [];
+    const marker = armMarkers[index];
+    const wave = marker.wave === void 0 ? null : waveKey(marker.session, marker.wave);
+    return [
+      {
+        batched: (first.batch ?? 1) >= 2,
+        rounds: rounds.length,
+        firstVerdict: first.verdict,
+        wave,
+        inRedWave: wave !== null && reds.some((red) => waveOfRed(waveStarts, red) === wave)
+      }
+    ];
+  });
+}
+function waveKey(session, wave) {
+  return `${session}\0${wave}`;
+}
+function waveStartsOf(armMarkers) {
+  const starts = /* @__PURE__ */ new Map();
+  for (const marker of armMarkers) {
+    if (marker.wave === void 0) continue;
+    const key = waveKey(marker.session, marker.wave);
+    starts.set(key, Math.min(starts.get(key) ?? Number.POSITIVE_INFINITY, Date.parse(marker.time)));
+  }
+  return starts;
+}
+function waveOfRed(waveStarts, red) {
+  const candidates = [...waveStarts].filter(
+    ([key, start]) => key.startsWith(`${red.session}\0`) && start <= red.time
+  );
+  return candidates.sort(([, left], [, right]) => right - left)[0]?.[0];
+}
+function classMetrics(outcomes) {
+  const firstFails = outcomes.filter((outcome) => outcome.firstVerdict === "fail").length;
+  const inWave = outcomes.filter((outcome) => outcome.wave !== null);
+  const escaped = inWave.filter((outcome) => outcome.inRedWave && outcome.firstVerdict === "pass").length;
+  return {
+    slices: outcomes.length,
+    first_fail_slices: firstFails,
+    first_fail_rate_percent: outcomes.length === 0 ? null : oneDecimal(firstFails * 100 / outcomes.length),
+    rounds_per_slice: roundsSummary(outcomes.map((outcome) => outcome.rounds)),
+    wave_slices: inWave.length,
+    escaped_slices: escaped,
+    escape_rate_percent: inWave.length === 0 ? null : oneDecimal(escaped * 100 / inWave.length)
+  };
+}
+function escapesOf(armed, greensRead) {
+  if (greensRead.kind === "omitted") return { omitted: greensRead.reason };
+  const escaped = armed.filter((outcome) => outcome.batched && outcome.inRedWave && outcome.firstVerdict === "pass");
+  return { waves: new Set(escaped.map((outcome) => outcome.wave)).size, batched_slices: escaped.length };
+}
+function recommendationOf(batched, solo, escapes) {
+  if (batched.slices < MIN_BATCHED_SLICES) {
+    return `none \u2014 sample too small: ${batched.slices} of ${MIN_BATCHED_SLICES} batched slices needed`;
+  }
+  if ("omitted" in escapes) return "none \u2014 escapes cannot be counted without the events log";
+  const batchedEscapes = batched.escape_rate_percent ?? 0;
+  if (batchedEscapes > (solo.escape_rate_percent ?? 0)) {
+    return batchedEscapes <= RARE_ESCAPE_PERCENT ? `lower batch to 2 \u2014 batched escapes are rare (${batchedEscapes.toFixed(1)} % <= ${RARE_ESCAPE_PERCENT} %) but above solo` : `revert \u2014 batched escape rate ${batchedEscapes.toFixed(1)} % is above ${RARE_ESCAPE_PERCENT} % and above solo`;
+  }
+  if ((batched.first_fail_rate_percent ?? 0) > (solo.first_fail_rate_percent ?? 0)) {
+    return "lower batch to 2 \u2014 batched first-fail rate is above solo";
+  }
+  return "keep \u2014 batched first-fail and escape rates are not worse than solo";
+}
+function waveSlicesOf(entries, armMarkers, armedSlice) {
+  const armedMarker = armMarkers.filter((marker) => marker.slice === armedSlice).at(-1);
+  if (armedMarker?.wave === void 0) return [];
+  const members = armMarkers.filter(
+    (marker) => marker.session === armedMarker.session && marker.wave === armedMarker.wave
+  );
+  return members.flatMap((marker) => activeSliceOf(entries, marker.slice) ?? []);
 }
 function activeSliceOf(entries, armedSlice) {
   if (armedSlice === null) return null;
@@ -1685,6 +1790,19 @@ function unreceiptedGreenCount(entries, greens) {
     entries.filter((entry) => isMarkerOf("arm", entry)).map((marker) => marker.session)
   );
   return greens.filter((green) => armingSessions.has(green.session)).length;
+}
+function waveSliceRows({ wave_slices: members }) {
+  return members.map((member) => ["wave slice", [activeSliceText({ active_slice: member })]]);
+}
+function classText(metrics) {
+  if (metrics.slices === 0) return "none";
+  const failRate = `${(metrics.first_fail_rate_percent ?? 0).toFixed(1)} % first-fail (${metrics.first_fail_slices} of ${metrics.slices})`;
+  const rounds = metrics.rounds_per_slice;
+  return `${failRate}, rounds max ${rounds?.max ?? 0}, median ${rounds?.median ?? 0}`;
+}
+function escapesText(escapes) {
+  if ("omitted" in escapes) return `omitted: ${escapes.omitted}`;
+  return `${escapes.waves} waves with an integration red held ${escapes.batched_slices} batched-passed slices (conformance-finding escapes are not recorded)`;
 }
 function activeSliceText({ active_slice: active }) {
   if (active === null) return "none \u2014 no slice is armed";
@@ -2496,7 +2614,7 @@ function readGreens() {
   const read = readStateFile(eventsLog);
   if (read.kind === "absent") return { kind: "omitted", reason: `no events log at ${eventsLog}` };
   if (read.kind === "unreadable") return { kind: "omitted", reason: `cannot read ${eventsLog}: ${read.cause}` };
-  return { kind: "read", greens: unreceiptedGreensIn(read.content) };
+  return { kind: "read", greens: unreceiptedGreensIn(read.content), integrationReds: integrationRedsIn(read.content) };
 }
 function runWatch(sessionId, remaining) {
   if (remaining.length > 0) throw new UsageError();
