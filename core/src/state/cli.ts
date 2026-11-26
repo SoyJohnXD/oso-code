@@ -240,7 +240,7 @@ function receiptOfGreen(
   preWriteSlice: string,
   written: ReadonlyMap<string, string>,
 ): GreenReceipt {
-  const receipt = greenReceiptOf(verdictsFileFor(stateFile), preWriteSlice, written);
+  const receipt = greenReceiptOf({ verdictsFile: verdictsFileFor(stateFile), wavesFile: wavesFileFor(stateFile) }, preWriteSlice, written);
   if (receipt.kind === "refused") throw new RefusedError(verb, receipt.reason);
   return receipt;
 }

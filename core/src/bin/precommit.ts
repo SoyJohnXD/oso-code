@@ -1,4 +1,4 @@
-import { commitGateArmedFor, untilGreenMessage, verifyIsGreen } from "../gates/commit.ts";
+import { commitGateArmedFor, currentBranchOf, otherSliceBranchRefusal, untilGreenMessage, verifyIsGreen } from "../gates/commit.ts";
 import { readArmedState, sanitizeSession, unusableStateMessage } from "../gates/preflight.ts";
 import { gateErrorText } from "../hosts/hook-run.ts";
 import { logEvent, stateFileFor, type LoggedEvent } from "../state/store.ts";
@@ -20,8 +20,13 @@ function preCommitRun(cwd: string, marker: string): PreCommitRun {
     return aborted(unusableStateMessage(stateFile, session), "state-unreadable", session);
   }
   if (!commitGateArmedFor(state.content, session)) return COMMIT_PROCEEDS;
-  if (verifyIsGreen(state.content)) return COMMIT_PROCEEDS;
+  if (verifyIsGreen(state.content)) return windowBinding(state.content, cwd, session);
   return aborted(untilGreenMessage(state.content), "commit-denied", session);
+}
+
+function windowBinding(stateContent: string, cwd: string, session: string): PreCommitRun {
+  const refusal = otherSliceBranchRefusal(stateContent, currentBranchOf(cwd));
+  return refusal === undefined ? COMMIT_PROCEEDS : aborted(refusal, "commit-denied", session);
 }
 
 function commitMarkerIn(environment: Readonly<Record<string, string | undefined>>): string {

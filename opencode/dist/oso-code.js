@@ -477,7 +477,8 @@ function writeStatePairs(stateFile, pairs, ownerSession, removedKeys = []) {
   const read = readStateFile(stateFile);
   if (read.kind === "unreadable") throw new StateFileUnreadableError(stateFile, read.cause);
   const existing = read.kind === "ok" ? read.content : "";
-  let lines = parseStateLines(existing).filter((line) => !removedKeys.includes(line.key));
+  const staleKeys = pairsRewriteGreen(pairs) ? [...removedKeys, "green_slice"] : removedKeys;
+  let lines = parseStateLines(existing).filter((line) => !staleKeys.includes(line.key));
   for (const pair of [...pairs, `session=${ownerSession}`]) {
     const [key, value] = splitPair(pair);
     lines = lines.filter((line) => line.key !== key);
@@ -486,6 +487,10 @@ function writeStatePairs(stateFile, pairs, ownerSession, removedKeys = []) {
   const content = serializeStateLines(lines);
   renameSync(createTempFile(directory, content), stateFile);
   return content;
+}
+function pairsRewriteGreen(pairs) {
+  const keys = pairs.map((pair) => splitPair(pair)[0]);
+  return keys.includes("verify_green") && !keys.includes("green_slice");
 }
 function isSymlink(target) {
   const stats = lstatOrUndefined(target);
@@ -1796,6 +1801,10 @@ function blockEnvelope(reason) {
 function endedEnvelope(reason) {
   return JSON.stringify({ continue: false, stopReason: reason, systemMessage: reason });
 }
+
+// core/src/gates/commit.ts
+import { execFileSync as execFileSync2 } from "node:child_process";
+import path9 from "node:path";
 
 // core/src/shell/lexed-word.ts
 var UNREAD_PAYLOAD_MARKER = "!unread-payload";
@@ -3119,6 +3128,35 @@ function verifyIsGreen(stateContent) {
 function commitGateArmedFor(stateContent, session) {
   return holdsMode(stateContent) && foreignOwner(stateContent, session) === void 0;
 }
+var WAVE_WINDOW_PREFIX = "wave-";
+var SLICE_BRANCH_FAMILY = "oso";
+var SLICE_BRANCH_SEGMENTS = 3;
+var REPOSITORY_REDIRECTING_OPTIONS = ["--git-dir", "--work-tree"];
+function windowSliceOf(stateContent) {
+  if (!verifyIsGreen(stateContent)) return void 0;
+  if (!stateValue(stateContent, "active_slice").startsWith(WAVE_WINDOW_PREFIX)) return void 0;
+  const named = stateValue(stateContent, "green_slice");
+  return named === "" ? void 0 : named;
+}
+function otherSliceBranchRefusal(stateContent, branch) {
+  const window = windowSliceOf(stateContent);
+  if (window === void 0 || branch === void 0) return void 0;
+  const segments = branch.split("/");
+  if (segments.length !== SLICE_BRANCH_SEGMENTS || segments[0] !== SLICE_BRANCH_FAMILY) return void 0;
+  if (segments[2] === window) return void 0;
+  return `oso-code: the green window names slice ${window}, so a commit from branch ${branch} is refused. Commit from the branch of slice ${window}, or wait for that window to close.`;
+}
+function currentBranchOf(directory) {
+  try {
+    const branch = execFileSync2("git", ["-C", directory, "symbolic-ref", "--short", "-q", "HEAD"], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"]
+    }).trim();
+    return branch === "" ? void 0 : branch;
+  } catch {
+    return void 0;
+  }
+}
 function judgeCommit({ envelope }) {
   const session = hookSessionId(envelope);
   if (session === "") return payloadUnparseable();
@@ -3127,9 +3165,13 @@ function judgeCommit({ envelope }) {
   if (state.kind === "absent") return ALLOWED;
   if (state.kind === "unusable") return deniedForUnusableState("commit", stateFile, session);
   if (!commitGateArmedFor(state.content, session)) return ALLOWED;
-  const verdict = lineVerdict(envelope.commandLine, judgeCommitLine);
+  const gitDirectories = [];
+  const verdict = lineVerdict(envelope.commandLine, (command, soFar) => {
+    if (isGatedGitCall(command)) gitDirectories.push(gitDirectoryOf(command, envelope.cwd));
+    return judgeCommitLine(command, soFar);
+  });
   if (verdict === "clear") return ALLOWED;
-  if (verifyIsGreen(state.content)) return ALLOWED;
+  if (verifyIsGreen(state.content)) return windowBindingOutcome(state.content, gitDirectories, session, envelope.commandLine);
   if (verdict === "residue" || verdict === "unread") {
     return allowedWithResidueCounted(session, envelope.commandLine);
   }
@@ -3140,6 +3182,23 @@ function judgeCommit({ envelope }) {
     session,
     detail: envelope.commandLine
   });
+}
+function windowBindingOutcome(stateContent, gitDirectories, session, commandLine) {
+  for (const directory of gitDirectories) {
+    const message = directory === void 0 ? void 0 : otherSliceBranchRefusal(stateContent, currentBranchOf(directory));
+    if (message !== void 0) return denied({ gate: "commit", message, event: "commit-denied", session, detail: commandLine });
+  }
+  return ALLOWED;
+}
+function gitDirectoryOf(command, workingDirectory) {
+  const { at } = gitVerbAt(command);
+  const options = command.tokens.slice(1, at);
+  if (options.some((token) => REPOSITORY_REDIRECTING_OPTIONS.some((option) => token.startsWith(option)))) return void 0;
+  let directory = workingDirectory;
+  options.forEach((token, position) => {
+    if (token === "-C") directory = path9.resolve(directory, options[position + 1] ?? "");
+  });
+  return directory;
 }
 function judgeCommitLine(command, verdict) {
   if (isGatedGitCall(command)) return "gated";
@@ -3732,7 +3791,7 @@ function reanchorContext(journalFile, unattendedRun) {
 }
 
 // core/src/gates/stale.ts
-import path9 from "node:path";
+import path10 from "node:path";
 var ROADMAP_DISARMED_SENTINEL = "none";
 var ROADMAP_PLACEHOLDER = "{roadmap}";
 var STALE_GATE = {
@@ -3764,7 +3823,7 @@ function staleStateContext(caller, stateFile, content, sessionId) {
   const skillPrefix = skillPrefixFor(caller.host);
   const stateBin = quoted(stateBinPath(caller));
   const clearCommand = `${stateBin} --session ${quoted(sessionId)} clear`;
-  const leftByAnother = `oso-code: this repository's own runtime state (${path9.basename(stateFile)}) was left by another session, and its flags arm this session's gates too`;
+  const leftByAnother = `oso-code: this repository's own runtime state (${path10.basename(stateFile)}) was left by another session, and its flags arm this session's gates too`;
   const roadmapValue = stateValue(content, "roadmap");
   const roadmapInFlight = roadmapValue === ROADMAP_DISARMED_SENTINEL ? "" : roadmapValue;
   if (roadmapInFlight === "") {
@@ -3780,7 +3839,7 @@ function skillPrefixFor(host) {
 }
 function stateBinPath(caller) {
   if (caller.stateBin !== "") return caller.stateBin;
-  return path9.join(pluginRootDirectory(), "bin", "oso-state");
+  return path10.join(pluginRootDirectory(), "bin", "oso-state");
 }
 function quoted(value) {
   return `"${value}"`;
@@ -3788,7 +3847,7 @@ function quoted(value) {
 
 // core/src/gates/statebin.ts
 import { appendFileSync as appendFileSync4 } from "node:fs";
-import path10 from "node:path";
+import path11 from "node:path";
 var STATEBIN_GATE = {
   gate: "statebin",
   errorSubject: "the state-bin gate",
@@ -3797,16 +3856,16 @@ var STATEBIN_GATE = {
 function judgeStatebin(_request) {
   const envFile = process.env["CLAUDE_ENV_FILE"];
   if (envFile === void 0 || envFile === "") return NO_VERDICT;
-  const stateBin = path10.join(pluginRootDirectory(), "bin", "oso-state");
+  const stateBin = path11.join(pluginRootDirectory(), "bin", "oso-state");
   appendFileSync4(envFile, `export OSO_STATE_BIN=${stateBin}
 `);
   return NO_VERDICT;
 }
 
 // core/src/gates/teardown.ts
-import { execFileSync as execFileSync2 } from "node:child_process";
+import { execFileSync as execFileSync3 } from "node:child_process";
 import { existsSync as existsSync2, readdirSync as readdirSync2, renameSync as renameSync2, rmSync as rmSync4, rmdirSync, statSync as statSync2 } from "node:fs";
-import path11 from "node:path";
+import path12 from "node:path";
 var ABANDONED_STATE_DAYS = 7;
 var EVENTS_LOG_RETENTION_DAYS = 30;
 var SECONDS_PER_DAY = 86400;
@@ -3834,7 +3893,7 @@ function stateArmedBy(sessionId) {
 }
 function removeWorktreesOf(sessionId, stateFile) {
   if (sessionId === "") return;
-  const sessionWorktrees = path11.join(stateRootDirectory(), "worktrees", sessionId);
+  const sessionWorktrees = path12.join(stateRootDirectory(), "worktrees", sessionId);
   if (!isDirectory(sessionWorktrees)) return;
   if (stateFile === void 0) return;
   const repoPath = stateValueOf(stateFile, "repo_path");
@@ -3883,7 +3942,7 @@ function clearRoadmapInFlightOf(sessionId) {
   }
 }
 function rotateAgedEventsLog() {
-  const eventsLog = path11.join(stateRootDirectory(), "events.jsonl");
+  const eventsLog = path12.join(stateRootDirectory(), "events.jsonl");
   if (!olderThanDays(eventsLog, EVENTS_LOG_RETENTION_DAYS)) return;
   renameSync2(eventsLog, `${eventsLog}.1`);
 }
@@ -3907,10 +3966,10 @@ function stateValueOf(stateFile, key) {
   return read.kind === "ok" ? stateValue(read.content, key) : "";
 }
 function stateFilesSorted() {
-  return directoryEntries(stateRootDirectory()).filter((name) => name.endsWith(".state")).sort().map((name) => path11.join(stateRootDirectory(), name)).filter((target) => isFile(target));
+  return directoryEntries(stateRootDirectory()).filter((name) => name.endsWith(".state")).sort().map((name) => path12.join(stateRootDirectory(), name)).filter((target) => isFile(target));
 }
 function subdirectoriesSorted(directory) {
-  return directoryEntries(directory).sort().map((name) => path11.join(directory, name)).filter((target) => isDirectory(target));
+  return directoryEntries(directory).sort().map((name) => path12.join(directory, name)).filter((target) => isDirectory(target));
 }
 function directoryEntries(directory) {
   try {
@@ -3925,7 +3984,7 @@ function isFile(target) {
 }
 function gitWorktreeRemove(repoPath, worktreePath) {
   try {
-    execFileSync2("git", ["-C", repoPath, "worktree", "remove", worktreePath], { stdio: "ignore" });
+    execFileSync3("git", ["-C", repoPath, "worktree", "remove", worktreePath], { stdio: "ignore" });
     return true;
   } catch {
     return false;
@@ -3933,7 +3992,7 @@ function gitWorktreeRemove(repoPath, worktreePath) {
 }
 function gitWorktreePrune(repoPath) {
   try {
-    execFileSync2("git", ["-C", repoPath, "worktree", "prune"], { stdio: "ignore" });
+    execFileSync3("git", ["-C", repoPath, "worktree", "prune"], { stdio: "ignore" });
     return true;
   } catch {
     return false;
@@ -3941,10 +4000,10 @@ function gitWorktreePrune(repoPath) {
 }
 
 // core/src/gates/unknown.ts
-import path14 from "node:path";
+import path15 from "node:path";
 
 // core/src/install/opencode.ts
-import path12 from "node:path";
+import path13 from "node:path";
 
 // core/src/install/backup.ts
 var DISK_BLOCK_SIZE_BYTES = 512;
@@ -4016,37 +4075,37 @@ function messageOf(error) {
 
 // core/src/install/opencode.ts
 function opencodePathsFor(homeDirectory2, environment) {
-  const configHome = path12.join(environment["XDG_CONFIG_HOME"] ?? path12.join(homeDirectory2, ".config"), "opencode");
-  const stateRoot = path12.join(homeDirectory2, ".local", "state", "oso-code");
+  const configHome = path13.join(environment["XDG_CONFIG_HOME"] ?? path13.join(homeDirectory2, ".config"), "opencode");
+  const stateRoot = path13.join(homeDirectory2, ".local", "state", "oso-code");
   return {
     homeDirectory: homeDirectory2,
     configHome,
-    configFile: path12.join(configHome, "opencode.json"),
-    globalFile: path12.join(configHome, "AGENTS.md"),
+    configFile: path13.join(configHome, "opencode.json"),
+    globalFile: path13.join(configHome, "AGENTS.md"),
     stateRoot,
     backupsRoot: stateRoot
   };
 }
 
 // core/src/install/opencode-install-layout.ts
-import path13 from "node:path";
+import path14 from "node:path";
 function openCodeInstallTargets(paths) {
   return {
-    skills: path13.join(paths.configHome, "skill"),
-    agents: path13.join(paths.configHome, "agent"),
-    commands: path13.join(paths.configHome, "command"),
-    plugin: path13.join(paths.configHome, "plugin"),
-    hooks: path13.join(paths.configHome, "hooks"),
-    gitHooks: path13.join(paths.configHome, "git-hooks"),
-    stateBin: path13.join(paths.configHome, "bin"),
-    dist: path13.join(paths.configHome, "dist"),
-    engramPlugin: path13.join(paths.configHome, "plugins", "engram.ts"),
-    impeccableMount: path13.join(paths.homeDirectory, ".agents", "skills", "impeccable"),
-    impeccableOptOut: path13.join(paths.stateRoot, "impeccable-opt-out"),
-    ownerRegistry: path13.join(paths.stateRoot, "opencode-install-registry"),
-    restoreExercisedMarker: path13.join(paths.stateRoot, ".install-restore-verified-opencode"),
-    planArtifactRoot: path13.join(paths.stateRoot, "plans"),
-    installRecord: path13.join(paths.configHome, "oso-code-install.json")
+    skills: path14.join(paths.configHome, "skill"),
+    agents: path14.join(paths.configHome, "agent"),
+    commands: path14.join(paths.configHome, "command"),
+    plugin: path14.join(paths.configHome, "plugin"),
+    hooks: path14.join(paths.configHome, "hooks"),
+    gitHooks: path14.join(paths.configHome, "git-hooks"),
+    stateBin: path14.join(paths.configHome, "bin"),
+    dist: path14.join(paths.configHome, "dist"),
+    engramPlugin: path14.join(paths.configHome, "plugins", "engram.ts"),
+    impeccableMount: path14.join(paths.homeDirectory, ".agents", "skills", "impeccable"),
+    impeccableOptOut: path14.join(paths.stateRoot, "impeccable-opt-out"),
+    ownerRegistry: path14.join(paths.stateRoot, "opencode-install-registry"),
+    restoreExercisedMarker: path14.join(paths.stateRoot, ".install-restore-verified-opencode"),
+    planArtifactRoot: path14.join(paths.stateRoot, "plans"),
+    installRecord: path14.join(paths.configHome, "oso-code-install.json")
   };
 }
 function isOpenCodeInstallRecord(parsed) {
@@ -4108,7 +4167,7 @@ function deniedUntilASliceIsArmed(toolName, session) {
   });
 }
 function harnessTreeTargetOf(envelope) {
-  const targets = writeTargetsOf(envelope).map((target) => path14.resolve(envelope.cwd, target));
+  const targets = writeTargetsOf(envelope).map((target) => path15.resolve(envelope.cwd, target));
   if (targets.length === 0) return void 0;
   const harnessTree = installedHarnessTree();
   return targets.find((target) => harnessTree.some((directory) => liesWithin(directory, target)));
@@ -4125,8 +4184,8 @@ function installedHarnessTree() {
   return [targets.skills, targets.agents, targets.commands, targets.plugin, targets.hooks, paths.stateRoot];
 }
 function liesWithin(directory, target) {
-  const relative = path14.relative(directory, target);
-  const escapes = relative === ".." || relative.startsWith(`..${path14.sep}`) || path14.isAbsolute(relative);
+  const relative = path15.relative(directory, target);
+  const escapes = relative === ".." || relative.startsWith(`..${path15.sep}`) || path15.isAbsolute(relative);
   return !escapes;
 }
 function readAllowlist(argv) {
@@ -4151,17 +4210,17 @@ function allowlistCarries(allowlist, toolName) {
 }
 
 // core/src/gates/version.ts
-import { execFileSync as execFileSync3 } from "node:child_process";
-import path18 from "node:path";
+import { execFileSync as execFileSync4 } from "node:child_process";
+import path19 from "node:path";
 
 // core/src/install/opencode-host.ts
 import { spawnSync as spawnSync2 } from "node:child_process";
 import { mkdtempSync, rmSync as rmSync5 } from "node:fs";
 import { tmpdir } from "node:os";
-import path16 from "node:path";
+import path17 from "node:path";
 
 // core/src/install/verify-claude.ts
-import path15 from "node:path";
+import path16 from "node:path";
 function compareVersionsAscending(a, b) {
   const segmentsOf = (value) => value.split(/(\d+)/).filter((segment) => segment !== "");
   const left = segmentsOf(a);
@@ -4180,9 +4239,9 @@ function collapsedNewlines(text) {
   return text.replace(/\n+$/, "").replace(/\n/g, " ");
 }
 function firstExecutableOnPath(environment, binaryName) {
-  const entries = (environment["PATH"] ?? "").split(path15.delimiter).filter((entry) => entry !== "");
+  const entries = (environment["PATH"] ?? "").split(path16.delimiter).filter((entry) => entry !== "");
   for (const entry of entries) {
-    const candidate = path15.join(entry, binaryName);
+    const candidate = path16.join(entry, binaryName);
     if (isExecutableRegularFile(candidate)) return candidate;
   }
   return void 0;
@@ -4241,7 +4300,7 @@ function versionFieldOf(probeOutput) {
   return versionLineReadingOf(strippedPerLine, OPENCODE_VERSION_LINE);
 }
 function probedVersion(environment, binaryPath) {
-  const probeHome = mkdtempSync(path16.join(environment["TMPDIR"] ?? tmpdir(), PROBE_HOME_PREFIX));
+  const probeHome = mkdtempSync(path17.join(environment["TMPDIR"] ?? tmpdir(), PROBE_HOME_PREFIX));
   try {
     const run = spawnSync2(binaryPath, ["--version"], {
       env: probeEnvironment(environment, probeHome),
@@ -4259,15 +4318,15 @@ function probeEnvironment(environment, probeHome) {
     HOME: probeHome,
     USERPROFILE: probeHome,
     TMPDIR: probeHome,
-    XDG_CONFIG_HOME: path16.join(probeHome, ".config"),
-    XDG_STATE_HOME: path16.join(probeHome, ".local", "state"),
-    XDG_CACHE_HOME: path16.join(probeHome, ".cache"),
-    XDG_DATA_HOME: path16.join(probeHome, ".local", "share")
+    XDG_CONFIG_HOME: path17.join(probeHome, ".config"),
+    XDG_STATE_HOME: path17.join(probeHome, ".local", "state"),
+    XDG_CACHE_HOME: path17.join(probeHome, ".cache"),
+    XDG_DATA_HOME: path17.join(probeHome, ".local", "share")
   };
 }
 
 // core/src/install/opencode-trust.ts
-import path17 from "node:path";
+import path18 from "node:path";
 
 // core/src/install/trust.ts
 import { readFileSync as readFileSync3 } from "node:fs";
@@ -4293,11 +4352,11 @@ var INSTALLED_TREE_MAP = [
   { published: "plugin/bin/", installed: "bin/" }
 ];
 function openCodeTrustTargetUnder(rootKind, root, published) {
-  if (rootKind === "source") return path17.join(root, ...published.split("/"));
+  if (rootKind === "source") return path18.join(root, ...published.split("/"));
   const mapped = INSTALLED_TREE_MAP.find((row) => row.published === published || row.published.endsWith("/") && published.startsWith(row.published));
   if (mapped === void 0) return void 0;
   const relative = mapped.published.endsWith("/") ? `${mapped.installed}${published.slice(mapped.published.length)}` : mapped.installed;
-  return path17.join(root, ...relative.split("/"));
+  return path18.join(root, ...relative.split("/"));
 }
 
 // core/src/install/pins.ts
@@ -4393,10 +4452,10 @@ function judgeVersion({ envelope }) {
   return { verdict: { kind: "context", additionalContext: context }, events: [] };
 }
 function pluginManifestFile() {
-  return path18.join(pluginRootDirectory(), ".claude-plugin", "plugin.json");
+  return path19.join(pluginRootDirectory(), ".claude-plugin", "plugin.json");
 }
 function publishedReleaseCacheFile() {
-  return path18.join(stateRootDirectory(), "published-release");
+  return path19.join(stateRootDirectory(), "published-release");
 }
 function repositorySlugOf(repositoryUrl) {
   if (!repositoryUrl.startsWith(GITHUB_URL_PREFIX) || repositoryUrl.length === GITHUB_URL_PREFIX.length) {
@@ -4407,7 +4466,7 @@ function repositorySlugOf(repositoryUrl) {
 }
 function marketplaceServesRepository(repositorySlug) {
   const home = homeDirectoryFrom(process.platform, process.env);
-  const marketplacesFile = path18.join(home, ".claude", "plugins", "known_marketplaces.json");
+  const marketplacesFile = path19.join(home, ".claude", "plugins", "known_marketplaces.json");
   const registrations = readFileOrEmpty(marketplacesFile).replace(/\s/g, "");
   return registrations.includes(`"repo":"${repositorySlug}"`);
 }
@@ -4426,7 +4485,7 @@ function cachedPublishedRelease(cacheFile) {
 function refreshPublishedReleaseCache(cacheFile, repositorySlug) {
   try {
     writeFileAtomically(
-      path18.dirname(cacheFile),
+      path19.dirname(cacheFile),
       cacheFile,
       fetchedHighestReleaseVersion(repositorySlug),
       ".published-release."
@@ -4440,7 +4499,7 @@ function fetchedHighestReleaseVersion(repositorySlug) {
 }
 function gitUploadPackAdvertisement(repositorySlug) {
   try {
-    return execFileSync3(
+    return execFileSync4(
       "curl",
       [
         "-fsS",
@@ -4554,7 +4613,7 @@ function explainedCause(cause) {
 
 // core/src/state/plan.ts
 import { chmodSync, existsSync as existsSync3, mkdirSync as mkdirSync5, readFileSync as readFileSync4, renameSync as renameSync3, rmSync as rmSync6 } from "node:fs";
-import path19 from "node:path";
+import path20 from "node:path";
 
 // core/src/state/transitions.ts
 function armPlan() {
@@ -4571,14 +4630,14 @@ function isValidPlanDigest(value) {
   return PLAN_DIGEST_PATTERN.test(value);
 }
 function planPaths(stateFile, digest) {
-  const root = path19.join(stateRootDirectory(), "plans");
-  const dir = path19.join(root, repositoryIdFor(stateFile));
+  const root = path20.join(stateRootDirectory(), "plans");
+  const dir = path20.join(root, repositoryIdFor(stateFile));
   return {
     root,
     dir,
-    presentedFile: path19.join(dir, `presented-${digest}.md`),
-    approvedFile: path19.join(dir, `approved-${digest}.md`),
-    currentFile: path19.join(dir, "current.md")
+    presentedFile: path20.join(dir, `presented-${digest}.md`),
+    approvedFile: path20.join(dir, `approved-${digest}.md`),
+    currentFile: path20.join(dir, "current.md")
   };
 }
 function ensurePlanDirectory(paths) {
@@ -5201,8 +5260,8 @@ function worktreeGitDir(dotGit, baseDir) {
   if (raw === "") {
     return null;
   }
-  const path20 = isAbsolute(raw) ? raw : join(baseDir, raw);
-  return resolve(path20);
+  const path21 = isAbsolute(raw) ? raw : join(baseDir, raw);
+  return resolve(path21);
 }
 function stripWorktreesSuffix(gitDir) {
   const marker = `${sep}worktrees${sep}`;
@@ -6002,9 +6061,9 @@ var MARKER_SUFFIX = ".json";
 function markerPath(commonDir, sessionId) {
   return join2(commonDir, `${MARKER_PREFIX}${sessionId}${MARKER_SUFFIX}`);
 }
-function readMarkerFile(path20) {
+function readMarkerFile(path21) {
   try {
-    return normalizeMarker(JSON.parse(readFileSync6(path20, "utf8")));
+    return normalizeMarker(JSON.parse(readFileSync6(path21, "utf8")));
   } catch {
     return null;
   }
@@ -6066,8 +6125,8 @@ function listStale(commonDir) {
     if (isLive(marker)) {
       continue;
     }
-    for (const path20 of marker.worktrees) {
-      orphans.push({ path: path20, sessionId: marker.sessionId });
+    for (const path21 of marker.worktrees) {
+      orphans.push({ path: path21, sessionId: marker.sessionId });
     }
   }
   return orphans;
@@ -6122,11 +6181,11 @@ function sweepStale(commonDir, options = {}) {
       continue;
     }
     let tornDown = true;
-    for (const path20 of marker.worktrees) {
-      if (removeWorktree(commonDir, path20, git)) {
-        reaped.push(path20);
+    for (const path21 of marker.worktrees) {
+      if (removeWorktree(commonDir, path21, git)) {
+        reaped.push(path21);
       } else {
-        left.push(path20);
+        left.push(path21);
         tornDown = false;
       }
     }
@@ -6136,9 +6195,9 @@ function sweepStale(commonDir, options = {}) {
   }
   return { reaped, left };
 }
-function removeWorktree(commonDir, path20, git) {
+function removeWorktree(commonDir, path21, git) {
   const cwd = dirname3(commonDir);
-  if (!runGit(git, ["worktree", "remove", path20], cwd)) {
+  if (!runGit(git, ["worktree", "remove", path21], cwd)) {
     return false;
   }
   runGit(git, ["worktree", "prune"], cwd);
