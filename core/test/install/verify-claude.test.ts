@@ -18,6 +18,7 @@ import {
   checkMcpConnectivity,
   checkNoCarriageReturnBytes,
   checkOsoStateBinRoundTrips,
+  checkPluginCacheMatchesHead,
   checkPluginInstalled,
   checkSettingsFreeOfGentleHooks,
   checkWindowsHomeDirectory,
@@ -71,6 +72,54 @@ describe("checkPluginInstalled", () => {
     const report = new VerifyReport();
     checkPluginInstalled(report, "");
     assert.ok(linesOf(report).includes("FAIL: oso-code plugin installed — expected 1, got 0"));
+  });
+});
+
+describe("checkPluginCacheMatchesHead", () => {
+  const STALE_SHA = "c2c8156000000000000000000000000000000000";
+
+  function committedRepository(): { root: string; head: string } {
+    const root = freshDirectory();
+    const git = (args: readonly string[]) => spawnSync("git", ["-C", root, ...args], { encoding: "utf8" });
+    git(["init", "-q"]);
+    git(["-c", "user.name=oso", "-c", "user.email=oso@example.invalid", "-c", "commit.gpgsign=false", "commit", "-q", "--allow-empty", "-m", "seed"]);
+    return { root, head: git(["rev-parse", "HEAD"]).stdout.trim() };
+  }
+
+  function claudeDirRecording(gitCommitSha: string | undefined): string {
+    const claudeDir = freshDirectory();
+    mkdirSync(path.join(claudeDir, "plugins"), { recursive: true });
+    writeJsonFile(path.join(claudeDir, "plugins", "installed_plugins.json"), {
+      plugins: { "oso-code@oso-code": [{ installPath: "/cache/oso-code/0.29.0", ...(gitCommitSha === undefined ? {} : { gitCommitSha }) }] },
+    });
+    return claudeDir;
+  }
+
+  test("fails naming the uninstall-and-install remedy when the cached plugin sits at another commit than HEAD", () => {
+    const { root, head } = committedRepository();
+    const report = new VerifyReport();
+    checkPluginCacheMatchesHead(report, claudeDirRecording(STALE_SHA), root, process.env);
+    const failure = linesOf(report).find((line) => line.startsWith("FAIL: oso-code plugin cache at repository HEAD"));
+    assert.ok(failure !== undefined, report.render());
+    assert.ok(failure.includes(`expected ${head}, got ${STALE_SHA}`), failure);
+    assert.ok(failure.includes("claude plugin uninstall oso-code@oso-code && claude plugin install oso-code@oso-code"), failure);
+    assert.equal(report.exitCode, 1);
+  });
+
+  test("passes when the cached plugin records the repository HEAD", () => {
+    const { root, head } = committedRepository();
+    const report = new VerifyReport();
+    checkPluginCacheMatchesHead(report, claudeDirRecording(head), root, process.env);
+    assert.ok(linesOf(report).includes(`ok:   oso-code plugin cache at repository HEAD (${head})`), report.render());
+  });
+
+  test("skips rather than fails when the record carries no gitCommitSha or the checkout has no HEAD", () => {
+    const { root } = committedRepository();
+    const report = new VerifyReport();
+    checkPluginCacheMatchesHead(report, claudeDirRecording(undefined), root, process.env);
+    checkPluginCacheMatchesHead(report, claudeDirRecording(STALE_SHA), freshDirectory(), process.env);
+    assert.equal(linesOf(report).filter((line) => line.startsWith("skip: oso-code plugin cache at repository HEAD")).length, 2, report.render());
+    assert.equal(report.exitCode, 0);
   });
 });
 

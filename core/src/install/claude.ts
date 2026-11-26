@@ -26,8 +26,11 @@ import {
   gitConfigValue,
   impeccableOptOutMarker,
   installRootFromManifest,
+  installedPluginCommitSha,
   manifestEntries,
   normalizedPath,
+  PLUGIN_CACHE_REFRESH_FIX,
+  repositoryHeadSha,
 } from "./verify-claude.ts";
 import { isDirectory, isExecutableRegularFile, isReadableRegularFile, isRegularNonSymlinkFile, isoTimestamp, writeFileAtomically } from "../state/store.ts";
 
@@ -97,6 +100,8 @@ export function installClaude(input: ClaudeCommandInput): ClaudeOutcome {
     return claudeFatal("install", "the oso-code plugin itself failed to install", error, restore);
   }
   softPluginMaintenance(input.environment);
+  const cacheRefresh = refreshStalePluginCache(input.environment, claudeDir, input.repositoryRoot);
+  if (cacheRefresh !== undefined) wiring.push(cacheRefresh);
   wiring.push(...migrateContext7(input.environment));
 
   wiring.push(publishStateBinPath(claudeDir, settingsFile));
@@ -511,6 +516,38 @@ function installOsoPluginCore(environment: NodeJS.ProcessEnv, repositoryRoot: st
 function softPluginMaintenance(environment: NodeJS.ProcessEnv): void {
   spawnSync("claude", ["plugin", "marketplace", "update", "oso-code"], { env: environment, encoding: "utf8" });
   spawnSync("claude", ["plugin", "update", "oso-code@oso-code"], { env: environment, encoding: "utf8" });
+}
+
+const PLUGIN_CACHE_COMPONENT = "oso-code plugin cache";
+
+function refreshStalePluginCache(environment: NodeJS.ProcessEnv, claudeDir: string, repositoryRoot: string): WiringEntry | undefined {
+  const installedPluginsFile = path.join(claudeDir, "plugins", "installed_plugins.json");
+  const head = repositoryHeadSha(repositoryRoot, environment);
+  const cached = installedPluginCommitSha(installedPluginsFile);
+  if (head === undefined || cached === undefined) return undefined;
+  if (cached === head) return wiringOk(PLUGIN_CACHE_COMPONENT, `at repository HEAD ${shortSha(head)}`);
+  const stale = `cached at ${shortSha(cached)} while the repository HEAD is ${shortSha(head)}`;
+  const uninstall = spawnSync("claude", ["plugin", "uninstall", "oso-code@oso-code"], { env: environment, encoding: "utf8" });
+  if (uninstall.error !== undefined || uninstall.status !== 0) {
+    return wiringFail(PLUGIN_CACHE_COMPONENT, `${stale}, and the uninstall failed: ${collapsedOutput(uninstall)} — fix: ${PLUGIN_CACHE_REFRESH_FIX}`);
+  }
+  const install = spawnSync("claude", ["plugin", "install", "oso-code@oso-code"], { env: environment, encoding: "utf8" });
+  if (install.error !== undefined || install.status !== 0) {
+    return wiringFail(
+      PLUGIN_CACHE_COMPONENT,
+      `${stale}; the stale copy was uninstalled but the reinstall failed: ${collapsedOutput(install)} — fix: claude plugin install oso-code@oso-code, then restart Claude Code`,
+    );
+  }
+  const refreshed = installedPluginCommitSha(installedPluginsFile);
+  if (refreshed === head) return wiringOk(PLUGIN_CACHE_COMPONENT, `refreshed from ${shortSha(cached)} to repository HEAD ${shortSha(head)}`);
+  return wiringFail(
+    PLUGIN_CACHE_COMPONENT,
+    `${stale}, and a reinstall recorded ${refreshed === undefined ? "no sha" : shortSha(refreshed)} — the oso-code marketplace serves another source than this checkout (see claude plugin marketplace list); push HEAD or point the marketplace at this directory, then re-run this installer`,
+  );
+}
+
+function shortSha(sha: string): string {
+  return sha.slice(0, 7);
 }
 
 function registerOsoMarketplace(environment: NodeJS.ProcessEnv, repositoryRoot: string): void {

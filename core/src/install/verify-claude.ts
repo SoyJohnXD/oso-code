@@ -20,6 +20,9 @@ const CONTEXT7_FIX =
   "claude plugin install oso-code@oso-code registers it (it ships in the plugin's .mcp.json, so there is no mcp add to run), and it starts through npx — so install Node.js if npx is missing, then restart Claude Code";
 const FALLOW_FIX =
   "bash bootstrap/install.sh installs the pinned fallow package from npm and wires a missing entry; an existing one it never touches, so repoint that with claude mcp remove fallow -s user && claude mcp add --scope user fallow -- the command that run names";
+const PLUGIN_CACHE_CHECK = "oso-code plugin cache at repository HEAD";
+export const PLUGIN_CACHE_REFRESH_FIX =
+  "claude plugin update is a no-op while the plugin version is unchanged, so refresh the cache with claude plugin uninstall oso-code@oso-code && claude plugin install oso-code@oso-code (bash bootstrap/install.sh --yes does that when the shas differ), then restart Claude Code";
 const STATE_BIN_FIX = "bash bootstrap/install.sh publishes the installed plugin's absolute bin/oso-state there, then restart Claude Code";
 const GIT_BASH_FIX =
   "point CLAUDE_CODE_GIT_BASH_PATH at the bash.exe you have (typically C:\\Program Files\\Git\\bin\\bash.exe) — bootstrap\\install.ps1 finds it and hands it to install.sh, which repairs the stored value; then restart Claude Code";
@@ -47,6 +50,7 @@ export function verifyClaude(input: VerifyClaudeInput): VerifyOutcome {
   const pluginListing = spawnClaudeStdout(environment, ["plugin", "list"]);
   const mcpListing = spawnClaudeStdout(environment, ["mcp", "list"]);
   checkPluginInstalled(report, pluginListing);
+  checkPluginCacheMatchesHead(report, claudeDir, repositoryRoot, environment);
   checkMcpConnectivity(report, mcpListing);
   checkLegacyArtifactsRemoved(report, repositoryRoot, claudeDir);
   checkSettingsFreeOfGentleHooks(report, claudeDir);
@@ -67,6 +71,25 @@ export function verifyClaude(input: VerifyClaudeInput): VerifyOutcome {
 
 export function checkPluginInstalled(report: VerifyReport, pluginListing: string): void {
   report.check("oso-code plugin installed", "1", countMatchingLines(pluginListing, "oso-code") >= 1 ? "1" : "0");
+}
+
+export function checkPluginCacheMatchesHead(
+  report: VerifyReport,
+  claudeDir: string,
+  repositoryRoot: string,
+  environment: NodeJS.ProcessEnv,
+): void {
+  const head = repositoryHeadSha(repositoryRoot, environment);
+  if (head === undefined) {
+    report.skip(`${PLUGIN_CACHE_CHECK} — ${repositoryRoot} has no readable git HEAD to compare against`);
+    return;
+  }
+  const cached = installedPluginCommitSha(path.join(claudeDir, "plugins", "installed_plugins.json"));
+  if (cached === undefined) {
+    report.skip(`${PLUGIN_CACHE_CHECK} — installed_plugins.json records no gitCommitSha for oso-code@oso-code`);
+    return;
+  }
+  report.check(PLUGIN_CACHE_CHECK, head, cached, PLUGIN_CACHE_REFRESH_FIX);
 }
 
 export function checkMcpConnectivity(report: VerifyReport, mcpListing: string): void {
@@ -294,17 +317,32 @@ function resolveInstallRoot(claudeDir: string): string {
 }
 
 export function installRootFromManifest(installedPluginsFile: string): string | undefined {
+  return osoPluginRecordField(installedPluginsFile, "installPath");
+}
+
+export function installedPluginCommitSha(installedPluginsFile: string): string | undefined {
+  return osoPluginRecordField(installedPluginsFile, "gitCommitSha");
+}
+
+function osoPluginRecordField(installedPluginsFile: string, field: string): string | undefined {
   if (!isReadableRegularFile(installedPluginsFile)) return undefined;
   try {
     const parsed = readJsonObject(installedPluginsFile);
     const plugins = parsed["plugins"];
     const entries = isRecord(plugins) ? plugins["oso-code@oso-code"] : undefined;
     const first = Array.isArray(entries) ? entries[0] : undefined;
-    const installPath = isRecord(first) ? first["installPath"] : undefined;
-    return typeof installPath === "string" && installPath !== "" ? installPath : undefined;
+    const value = isRecord(first) ? first[field] : undefined;
+    return typeof value === "string" && value !== "" ? value : undefined;
   } catch {
     return undefined;
   }
+}
+
+export function repositoryHeadSha(repositoryRoot: string, environment: NodeJS.ProcessEnv): string | undefined {
+  const result = spawnSync("git", ["-C", repositoryRoot, "rev-parse", "HEAD"], { env: environment, encoding: "utf8" });
+  if (result.error !== undefined || result.status !== 0) return undefined;
+  const sha = result.stdout.trim();
+  return sha === "" ? undefined : sha;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
