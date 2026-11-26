@@ -11,4 +11,4 @@
 3aaa67c6df371430b5ec708eb9f7314104998fde2507d25a02a3c419435e30dc  plugin/git-hooks/pre-commit
 e3c3e73d1aa7b5217a9a169e9fd5d5a7281ee77ec710aab92b0f3b8c961271f6  plugin/bin/oso-state
 609158e6c5fbc237939fa3ddf7faab80ab690bdc0c8d584414a885130103c4e8  plugin/bin/package.json
-525dcf9fbb59073dcbf994c78bbbb5ed4e1a2e915fcb9541bf72c0d1916f6377  opencode/dist/oso-code.js
+6ca0cb07783db7e8b69df9195a59ff30d939d5e2afae6e8d3e67781db9211ee1  opencode/dist/oso-code.js

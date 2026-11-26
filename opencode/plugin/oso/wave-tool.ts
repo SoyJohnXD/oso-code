@@ -1,12 +1,13 @@
 import { commonDirOf } from "./identity.ts";
 import { DIRECT_CALL, type OsoTool, type ToolHost } from "./tool.ts";
-import { isSliceId, type ParsedAgentVerdict } from "@oso-code/core";
+import { isSliceId, readSliceBlocks, type ParsedAgentVerdict } from "@oso-code/core";
 import {
   pinnedSessionTransport,
   runWave,
   type BatchPacket,
   type WaveAgent,
   type WaveChildLaunch,
+  type WaveChildReported,
   type WaveChildResult,
 } from "./wave.ts";
 
@@ -48,9 +49,12 @@ export function waveTool(host: ToolHost): OsoTool {
                   properties: {
                     slice: { type: "string", description: "The slice id, unique within the batch." },
                     worktree: { type: "string", description: "Absolute path of the slice's git worktree." },
+                    slice_start: { type: "string", description: "The ref the slice's diff is judged against." },
+                    criteria: { type: "string", description: "The slice's verify criteria, verbatim." },
+                    decision_block: { type: "string", description: "The ledger decisions relevant to the slice, verbatim." },
                     applier_proof: { type: "string", description: "The slice's applier proof, scan, and decisions_used blocks, verbatim and alone." },
                   },
-                  required: ["slice", "worktree", "applier_proof"],
+                  required: ["slice", "worktree", "slice_start", "criteria", "decision_block", "applier_proof"],
                 },
               },
             },
@@ -140,7 +144,7 @@ function parseBatchLaunch(record: Record<string, unknown>, index: number): WaveC
 
 function parsePacket(packet: unknown, childIndex: number, index: number): BatchPacket {
   const record = (typeof packet === "object" && packet !== null ? packet : {}) as Record<string, unknown>;
-  const { slice, worktree, applier_proof: applierProof } = record;
+  const { slice, worktree, slice_start: sliceStart, criteria, decision_block: decisionBlock, applier_proof: applierProof } = record;
   const where = `oso_wave child ${childIndex} packet ${index}`;
   if (typeof slice !== "string" || !isSliceId(slice)) {
     throw new Error(`${where} needs a slice id matching the slice id rule, not ${JSON.stringify(slice)}`);
@@ -148,10 +152,19 @@ function parsePacket(packet: unknown, childIndex: number, index: number): BatchP
   if (typeof worktree !== "string" || worktree === "") {
     throw new Error(`${where} needs a worktree path, not ${JSON.stringify(worktree)}`);
   }
+  if (typeof sliceStart !== "string" || sliceStart === "") {
+    throw new Error(`${where} needs slice_start, not ${JSON.stringify(sliceStart)}`);
+  }
+  if (typeof criteria !== "string" || criteria === "") {
+    throw new Error(`${where} needs criteria, not ${JSON.stringify(criteria)}`);
+  }
+  if (typeof decisionBlock !== "string" || decisionBlock === "") {
+    throw new Error(`${where} needs decision_block, not ${JSON.stringify(decisionBlock)}`);
+  }
   if (typeof applierProof !== "string" || applierProof === "") {
     throw new Error(`${where} needs applier_proof as the applier's three report blocks, not ${JSON.stringify(applierProof)}`);
   }
-  return { slice, worktree, applierProof };
+  return { slice, worktree, sliceStart, criteria, decisionBlock, applierProof };
 }
 
 function isWaveAgent(value: unknown): value is WaveAgent {
@@ -174,15 +187,18 @@ function renderChild(result: WaveChildResult): string {
   if (result.outcome === "blocked") {
     return `=== ${result.worktree} (${result.agent}) — blocked: ${result.reason} ===`;
   }
-  return `=== ${result.worktree} (${result.agent}) — ${verdictSummary(result.verdict)} ===\n${result.raw}`;
+  return `=== ${result.worktree} (${result.agent}) — ${verdictSummary(result)} ===\n${result.raw}`;
 }
 
-function verdictSummary(parsed: ParsedAgentVerdict): string {
+function verdictSummary({ verdict: parsed, raw }: WaveChildReported): string {
   const lines: string[] = [];
   if (parsed.status !== undefined) {
     lines.push(`status: ${parsed.status}`);
   }
-  if (parsed.verdict !== undefined) {
+  const blocks = readSliceBlocks(raw);
+  if (blocks.length > 1) {
+    lines.push(`verdict: ${blocks.map((block) => `${block.slice ?? "unnamed"} ${block.verdict}`).join(", ")}`);
+  } else if (parsed.verdict !== undefined) {
     lines.push(`verdict: ${parsed.verdict}`);
   }
   return lines.length === 0 ? "no verdict line" : lines.join(", ");

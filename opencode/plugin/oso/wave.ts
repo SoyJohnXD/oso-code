@@ -16,6 +16,9 @@ export interface SingleChildLaunch {
 export interface BatchPacket {
   slice: string;
   worktree: string;
+  sliceStart: string;
+  criteria: string;
+  decisionBlock: string;
   applierProof: string;
 }
 
@@ -205,8 +208,15 @@ function promptOf(launch: WaveChildLaunch): string {
   return applierProof === undefined ? prompt : `${prompt}\n\n${APPLIER_PROOF_HEADER}\n${applierProof}`;
 }
 
-function packetSection({ slice, worktree, applierProof }: BatchPacket): string {
-  return `=== slice packet: ${slice} ===\nWORKTREE PATH: ${worktree}\n\n${APPLIER_PROOF_HEADER}\n${applierProof}`;
+function packetSection({ slice, worktree, sliceStart, criteria, decisionBlock, applierProof }: BatchPacket): string {
+  const body = [
+    `WORKTREE PATH: ${worktree}`,
+    `SLICE START: ${sliceStart}`,
+    `CRITERIA:\n${criteria}`,
+    `DECISION BLOCK:\n${decisionBlock}`,
+    `${APPLIER_PROOF_HEADER}\n${applierProof}`,
+  ].join("\n\n");
+  return `=== slice packet: ${slice} ===\n${body}`;
 }
 
 const INTERRUPT_BOUND_MS = 10_000;

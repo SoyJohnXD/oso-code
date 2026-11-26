@@ -193,6 +193,7 @@ test("oso_wave runs from the directory of the calling session's record, not a di
   });
 });
 
+const PACKET_FIELDS = { slice_start: "abc123", criteria: "criterion", decision_block: "decision" };
 const PROOF = "proof:\n  - criterion: c\nscan:\n  - cmd: x  exit: 0  hits: none\ndecisions_used:\n  - D1";
 
 test("oso_wave refuses a call with more children than the cap before any session exists", async () => {
@@ -211,12 +212,16 @@ test("oso_wave refuses a batch of four packets, a repeated slice id and a bad pa
   await withToolFixture(async (fixture) => {
     const children = replyingSessions(() => "token: t\n");
     const tool = waveTool(hostIn(fixture.repoDir, children));
-    const packet = (slice: string) => ({ slice, worktree: fixture.applierWorktree, applier_proof: PROOF });
+    const packet = (slice: string) => ({ slice, worktree: fixture.applierWorktree, ...PACKET_FIELDS, applier_proof: PROOF });
     const batch = (packets: unknown[]) => ({ children: [{ agent: "verifier", prompt: "verify\nTOKEN: t", packets }] });
     await assert.rejects(() => tool.execute(batch(["s1", "s2", "s3", "s4"].map(packet)), CALL), /at most 3/);
     await assert.rejects(() => tool.execute(batch([packet("s1"), packet("s1")]), CALL), /slice id s1 in more than one packet/);
     await assert.rejects(() => tool.execute(batch([{ ...packet("s1"), slice: "../s1" }]), CALL), /needs a slice id/);
-    await assert.rejects(() => tool.execute(batch([{ slice: "s1", worktree: fixture.applierWorktree }]), CALL), /needs applier_proof/);
+    await assert.rejects(() => tool.execute(batch([{ slice: "s1", worktree: fixture.applierWorktree, ...PACKET_FIELDS }]), CALL), /needs applier_proof/);
+    for (const field of ["slice_start", "criteria", "decision_block"]) {
+      const { [field]: _omitted, ...rest } = packet("s1") as Record<string, unknown>;
+      await assert.rejects(() => tool.execute(batch([rest]), CALL), new RegExp(`needs ${field}`));
+    }
     const invalid = await tool.execute(batch([packet("s1"), { ...packet("s2"), worktree: fixture.repoDir }]), CALL);
     assert.equal(invalid.metadata?.blocked, 1);
     assert.match(contentOf(invalid), /is not a git worktree, it is root/);
@@ -234,9 +239,9 @@ test("oso_wave runs a batch verifier of three packets in one session pinned to t
           agent: "verifier",
           prompt: "verify the batch\nTOKEN: t",
           packets: [
-            { slice: "s1", worktree: worktrees[0], applier_proof: "proof-one" },
-            { slice: "s2", worktree: worktrees[1], applier_proof: "proof-two" },
-            { slice: "s3", worktree: worktrees[0], applier_proof: "proof-three" },
+            { slice: "s1", worktree: worktrees[0], slice_start: "start-s1", criteria: "criteria-s1", decision_block: "decision-s1", applier_proof: "proof-one" },
+            { slice: "s2", worktree: worktrees[1], slice_start: "start-s2", criteria: "criteria-s2", decision_block: "decision-s2", applier_proof: "proof-two" },
+            { slice: "s3", worktree: worktrees[0], slice_start: "start-s3", criteria: "criteria-s3", decision_block: "decision-s3", applier_proof: "proof-three" },
           ],
         }],
       },
@@ -249,11 +254,24 @@ test("oso_wave runs a batch verifier of three packets in one session pinned to t
       children.turns[0]?.text,
       [
         "verify the batch\nTOKEN: t",
-        `=== slice packet: s1 ===\nWORKTREE PATH: ${worktrees[0]}\n\n=== applier_proof ===\nproof-one`,
-        `=== slice packet: s2 ===\nWORKTREE PATH: ${worktrees[1]}\n\n=== applier_proof ===\nproof-two`,
-        `=== slice packet: s3 ===\nWORKTREE PATH: ${worktrees[0]}\n\n=== applier_proof ===\nproof-three`,
+        `=== slice packet: s1 ===\nWORKTREE PATH: ${worktrees[0]}\n\nSLICE START: start-s1\n\nCRITERIA:\ncriteria-s1\n\nDECISION BLOCK:\ndecision-s1\n\n=== applier_proof ===\nproof-one`,
+        `=== slice packet: s2 ===\nWORKTREE PATH: ${worktrees[1]}\n\nSLICE START: start-s2\n\nCRITERIA:\ncriteria-s2\n\nDECISION BLOCK:\ndecision-s2\n\n=== applier_proof ===\nproof-two`,
+        `=== slice packet: s3 ===\nWORKTREE PATH: ${worktrees[0]}\n\nSLICE START: start-s3\n\nCRITERIA:\ncriteria-s3\n\nDECISION BLOCK:\ndecision-s3\n\n=== applier_proof ===\nproof-three`,
       ].join("\n\n"),
     );
     assert.equal(result.metadata?.blocked, 0);
+  });
+});
+
+test("oso_wave heads a batch child with one verdict per slice, so a failed slice is never hidden", async () => {
+  await withToolFixture(async (fixture) => {
+    const reply = "token: t\nslice: s1\nverdict: fail\nslice: s3\nverdict: pass\n";
+    const children = replyingSessions(() => reply);
+    const packet = (slice: string) => ({ slice, worktree: fixture.applierWorktree, ...PACKET_FIELDS, applier_proof: PROOF });
+    const result = await waveTool(hostIn(fixture.repoDir, children)).execute(
+      { children: [{ agent: "verifier", prompt: "verify\nTOKEN: t", packets: [packet("s1"), packet("s3")] }] },
+      CALL,
+    );
+    assert.match(contentOf(result), /verdict: s1 fail, s3 pass ===/);
   });
 });

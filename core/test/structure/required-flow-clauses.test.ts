@@ -80,6 +80,10 @@ const ROWS: readonly Row[] = [
     ],
   },
   {
+    contract: "the verifier contract gives each batched slice its own verdict",
+    targets: [{ files: VERIFIER_CONTRACTS, tokens: ["verify a BATCH of up to 3 implemented slices and give each slice its own verdict"] }],
+  },
+  {
     contract: "every launch carries the model the profile names and the milestone names it",
     targets: [
       { files: FLOWS_THAT_LAUNCH_DELEGATES, tokens: ["the model the profile names for its role", "named in the Launching milestone"] },
@@ -154,4 +158,14 @@ describe("the row matcher reports what it cannot find", () => {
     assert.deepEqual(problemsOf(targets, synthetic("alpha only")), ['synthetic.md lacks "beta"']);
     assert.deepEqual(problemsOf(targets, synthetic("alpha and beta")), []);
   });
+});
+
+describe("the verifier contract never calls a batch independent", () => {
+  for (const file of VERIFIER_CONTRACTS) {
+    test(file, () => {
+      const opening = readFromTree(file).split("\n").find((line) => line.includes("BATCH")) ?? "";
+      const afterBatch = opening.slice(opening.indexOf("BATCH"));
+      assert.doesNotMatch(afterBatch.split(". ")[0] ?? "", /independent/i);
+    });
+  }
 });
