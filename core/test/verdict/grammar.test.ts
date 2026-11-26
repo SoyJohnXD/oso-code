@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { parseAgentVerdict, readSliceBlocks, readVerdictShape } from "../../src/verdict/grammar.ts";
+import { parseAgentVerdict, readLaunchToken, readSliceBlocks, readVerdictShape } from "../../src/verdict/grammar.ts";
 
 test("parses an applier done status", () => {
   const parsed = parseAgentVerdict("finished the work\nstatus: done\n");
@@ -111,4 +111,9 @@ test("a block whose slice id cannot be parsed is malformed without a slice and k
 test("text before the first slice line is not part of any block", () => {
   const readings = readSliceBlocks("verdict: fail\nslice: s1\nverdict: pass\n");
   assert.deepEqual(readings, [{ slice: "s1", verdict: "pass", verdict_shape: "valid" }]);
+});
+
+test("reads the launch token line and none when the report carries no token", () => {
+  assert.equal(readLaunchToken("token: t-1.a\nslice: s1\nverdict: pass"), "t-1.a");
+  assert.equal(readLaunchToken("slice: s1\nverdict: pass"), undefined);
 });

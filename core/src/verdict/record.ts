@@ -30,11 +30,14 @@ export type VerdictRecord = Readonly<{
   verdict: RecordedVerdict;
   verdict_shape: VerdictShape;
   escalated: boolean;
+  batch?: number;
 }>;
 
 export const SLICE_MARKS = ["diagnosed", "escalated", "empty-result"] as const;
 
-const MARKER_KINDS = ["arm", ...SLICE_MARKS] as const;
+export const RISK_HIGH_DISCARDED = "risk-high";
+
+const MARKER_KINDS = ["arm", RISK_HIGH_DISCARDED, ...SLICE_MARKS] as const;
 
 export type Marker = Readonly<{
   kind: (typeof MARKER_KINDS)[number];
@@ -72,6 +75,7 @@ export function appendVerdict(verdictsFile: string, capture: VerdictCapture): bo
       verdict: capture.verdict,
       verdict_shape: capture.verdict_shape,
       escalated: arming.some((entry) => isMarkerOf("escalated", entry)),
+      ...(capture.batch === undefined ? {} : { batch: capture.batch }),
     };
   });
 }
@@ -169,13 +173,14 @@ function markerOf(fields: Record<string, unknown>): Marker | undefined {
 }
 
 function verdictRecordOf(fields: Record<string, unknown>): VerdictRecord | undefined {
-  const { time, host, session, change, slice, attempt, role, model, verdict, verdict_shape, escalated } = fields;
+  const { time, host, session, change, slice, attempt, role, model, verdict, verdict_shape, escalated, batch } = fields;
   if (!isText(time) || !isText(session) || !isTextOrNull(change) || !isTextOrNull(slice) || !isText(role)) return undefined;
   if (!isHostName(host) || typeof attempt !== "number") return undefined;
   if (!isTextOrNull(model) || typeof escalated !== "boolean") return undefined;
   const recorded = RECORDED_VERDICTS.find((value) => value === verdict);
   const shape = VERDICT_SHAPES.find((value) => value === verdict_shape);
   if (recorded === undefined || shape === undefined) return undefined;
+  if (batch !== undefined && typeof batch !== "number") return undefined;
   return {
     time,
     host,
@@ -188,6 +193,7 @@ function verdictRecordOf(fields: Record<string, unknown>): VerdictRecord | undef
     verdict: recorded,
     verdict_shape: shape,
     escalated,
+    ...(batch === undefined ? {} : { batch }),
   };
 }
 
