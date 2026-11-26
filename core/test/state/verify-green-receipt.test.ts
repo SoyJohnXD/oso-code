@@ -214,3 +214,98 @@ describe("oso-state report counts the greens the receipt logged unreceipted", ()
     });
   });
 });
+
+describe("a named wave window is receipted per slice", () => {
+  const WAVE_STATE = `mode=plan\nactive_slice=wave-1\nverify_green=false\nsession=${SESSION}\n`;
+  const WAVES_LOG = `${REPOSITORY_RUNS_DIR}/waves.jsonl`;
+  const WAVE_RECORD = JSON.stringify({
+    kind: "wave",
+    wave: "wave-1",
+    slices: [{ slice: "s1", risk: "low" }, { slice: "s2", risk: "low" }],
+    session: SESSION,
+    change: "alpha",
+    time: "2026-09-01T09:59:00Z",
+  });
+  const NAMED_WINDOW = ["mode=plan", "active_slice=wave-1", "verify_green=true", "green_slice=s1"];
+
+  function seedWave(sandbox: StateSandbox, verdictLines: readonly string[]): void {
+    sandbox.seed({
+      [STATE_FILE]: WAVE_STATE,
+      [WAVES_LOG]: `${WAVE_RECORD}\n`,
+      [VERDICTS_LOG]: verdictLines.map((line) => `${line}\n`).join(""),
+    });
+  }
+
+  function riskHighMarker(slice: string, time: string): string {
+    return JSON.stringify({ kind: "risk-high", slice, session: SESSION, change: "alpha", time });
+  }
+
+  test("a slice with no valid pass is refused and the state is unchanged", () => {
+    withStateSandbox("workspace", (sandbox) => {
+      seedWave(sandbox, [armMarker("s1", "2026-09-01T10:00:00Z"), verifierRecord("s1", "2026-09-01T10:05:00Z", "fail")]);
+      const refused = sandbox.run(CLI_SUBJECT, ["--session", SESSION, "set", ...NAMED_WINDOW]);
+      assert.equal(refused.exit, 1);
+      assert.ok(refused.stderr.startsWith("oso-state: set refused: "), refused.stderr);
+      assert.equal(stateContent(sandbox), WAVE_STATE);
+    });
+  });
+
+  test("a slice with no record at all is refused", () => {
+    withStateSandbox("workspace", (sandbox) => {
+      seedWave(sandbox, [armMarker("s1", "2026-09-01T10:00:00Z")]);
+      assert.equal(sandbox.run(CLI_SUBJECT, ["--session", SESSION, "set", ...NAMED_WINDOW]).exit, 1);
+    });
+  });
+
+  test("a slice after its pass is receipted, names the window and logs no unreceipted event", () => {
+    withStateSandbox("workspace", (sandbox) => {
+      seedWave(sandbox, [armMarker("s1", "2026-09-01T10:00:00Z"), verifierRecord("s1", "2026-09-01T10:05:00Z", "pass")]);
+      const allowed = sandbox.run(CLI_SUBJECT, ["--session", SESSION, "set", ...NAMED_WINDOW]);
+      assert.equal(allowed.exit, 0, allowed.stderr);
+      assert.match(stateContent(sandbox), /^green_slice=s1$/m);
+      assert.ok(!sandbox.eventLogLines().some((line) => line.includes(UNRECEIPTED_EVENT)));
+    });
+  });
+
+  test("a pass followed by a newer risk-high marker is refused", () => {
+    withStateSandbox("workspace", (sandbox) => {
+      seedWave(sandbox, [
+        armMarker("s1", "2026-09-01T10:00:00Z"),
+        verifierRecord("s1", "2026-09-01T10:05:00Z", "pass"),
+        riskHighMarker("s1", "2026-09-01T10:06:00Z"),
+      ]);
+      const refused = sandbox.run(CLI_SUBJECT, ["--session", SESSION, "set", ...NAMED_WINDOW]);
+      assert.equal(refused.exit, 1);
+      assert.match(refused.stderr, /risk-high/);
+    });
+  });
+
+  test("a risk-high marker older than the pass does not refuse", () => {
+    withStateSandbox("workspace", (sandbox) => {
+      seedWave(sandbox, [
+        armMarker("s1", "2026-09-01T10:00:00Z"),
+        riskHighMarker("s1", "2026-09-01T10:01:00Z"),
+        verifierRecord("s1", "2026-09-01T10:05:00Z", "pass"),
+      ]);
+      assert.equal(sandbox.run(CLI_SUBJECT, ["--session", SESSION, "set", ...NAMED_WINDOW]).exit, 0);
+    });
+  });
+
+  test("a slice outside the started wave is refused", () => {
+    withStateSandbox("workspace", (sandbox) => {
+      seedWave(sandbox, [armMarker("s9", "2026-09-01T10:00:00Z"), verifierRecord("s9", "2026-09-01T10:05:00Z", "pass")]);
+      const refused = sandbox.run(CLI_SUBJECT, ["--session", SESSION, "set", "mode=plan", "active_slice=wave-1", "verify_green=true", "green_slice=s9"]);
+      assert.equal(refused.exit, 1);
+      assert.match(refused.stderr, /not in the started wave-1/);
+    });
+  });
+
+  test("the next verify_green=false clears the name", () => {
+    withStateSandbox("workspace", (sandbox) => {
+      seedWave(sandbox, [armMarker("s1", "2026-09-01T10:00:00Z"), verifierRecord("s1", "2026-09-01T10:05:00Z", "pass")]);
+      assert.equal(sandbox.run(CLI_SUBJECT, ["--session", SESSION, "set", ...NAMED_WINDOW]).exit, 0);
+      assert.equal(sandbox.run(CLI_SUBJECT, ["--session", SESSION, "set", "verify_green=false"]).exit, 0);
+      assert.doesNotMatch(stateContent(sandbox), /green_slice/);
+    });
+  });
+});

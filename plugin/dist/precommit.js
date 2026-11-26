@@ -1,3 +1,6 @@
+// core/src/gates/commit.ts
+import { execFileSync as execFileSync2 } from "node:child_process";
+
 // core/src/hosts/envelope.ts
 var JSON_SPACE = "[\\t\\n\\v\\f\\r ]";
 var STOP_HOOK_ACTIVE = new RegExp(`"stop_hook_active"${JSON_SPACE}*:${JSON_SPACE}*true`);
@@ -339,6 +342,34 @@ function verifyIsGreen(stateContent) {
 function commitGateArmedFor(stateContent, session) {
   return holdsMode(stateContent) && foreignOwner(stateContent, session) === void 0;
 }
+var WAVE_WINDOW_PREFIX = "wave-";
+var SLICE_BRANCH_FAMILY = "oso";
+var SLICE_BRANCH_SEGMENTS = 3;
+function windowSliceOf(stateContent) {
+  if (!verifyIsGreen(stateContent)) return void 0;
+  if (!stateValue(stateContent, "active_slice").startsWith(WAVE_WINDOW_PREFIX)) return void 0;
+  const named = stateValue(stateContent, "green_slice");
+  return named === "" ? void 0 : named;
+}
+function otherSliceBranchRefusal(stateContent, branch) {
+  const window = windowSliceOf(stateContent);
+  if (window === void 0 || branch === void 0) return void 0;
+  const segments = branch.split("/");
+  if (segments.length !== SLICE_BRANCH_SEGMENTS || segments[0] !== SLICE_BRANCH_FAMILY) return void 0;
+  if (segments[2] === window) return void 0;
+  return `oso-code: the green window names slice ${window}, so a commit from branch ${branch} is refused. Commit from the branch of slice ${window}, or wait for that window to close.`;
+}
+function currentBranchOf(directory) {
+  try {
+    const branch = execFileSync2("git", ["-C", directory, "symbolic-ref", "--short", "-q", "HEAD"], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"]
+    }).trim();
+    return branch === "" ? void 0 : branch;
+  } catch {
+    return void 0;
+  }
+}
 
 // core/src/hosts/hook-run.ts
 function gateErrorText(subject) {
@@ -360,8 +391,12 @@ function preCommitRun(cwd, marker) {
     return aborted(unusableStateMessage(stateFile, session), "state-unreadable", session);
   }
   if (!commitGateArmedFor(state.content, session)) return COMMIT_PROCEEDS;
-  if (verifyIsGreen(state.content)) return COMMIT_PROCEEDS;
+  if (verifyIsGreen(state.content)) return windowBinding(state.content, cwd, session);
   return aborted(untilGreenMessage(state.content), "commit-denied", session);
+}
+function windowBinding(stateContent, cwd, session) {
+  const refusal = otherSliceBranchRefusal(stateContent, currentBranchOf(cwd));
+  return refusal === void 0 ? COMMIT_PROCEEDS : aborted(refusal, "commit-denied", session);
 }
 function commitMarkerIn(environment) {
   const named = environment["CLAUDE_CODE_SESSION_ID"];

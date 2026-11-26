@@ -1087,7 +1087,8 @@ function writeStatePairs(stateFile, pairs, ownerSession, removedKeys = []) {
   const read = readStateFile(stateFile);
   if (read.kind === "unreadable") throw new StateFileUnreadableError(stateFile, read.cause);
   const existing = read.kind === "ok" ? read.content : "";
-  let lines = parseStateLines(existing).filter((line) => !removedKeys.includes(line.key));
+  const staleKeys = pairsRewriteGreen(pairs) ? [...removedKeys, "green_slice"] : removedKeys;
+  let lines = parseStateLines(existing).filter((line) => !staleKeys.includes(line.key));
   for (const pair of [...pairs, `session=${ownerSession}`]) {
     const [key, value] = splitPair(pair);
     lines = lines.filter((line) => line.key !== key);
@@ -1096,6 +1097,10 @@ function writeStatePairs(stateFile, pairs, ownerSession, removedKeys = []) {
   const content = serializeStateLines(lines);
   renameSync(createTempFile(directory, content), stateFile);
   return content;
+}
+function pairsRewriteGreen(pairs) {
+  const keys = pairs.map((pair) => splitPair(pair)[0]);
+  return keys.includes("verify_green") && !keys.includes("green_slice");
 }
 function logSet(sessionId, pairs) {
   logEvent({ event: `set:${pairs.join(" ")}`, session: sessionId });
@@ -1492,24 +1497,6 @@ function isTextOrNull(value) {
   return value === null || typeof value === "string";
 }
 
-// core/src/verdict/receipt.ts
-var WAVE_SLICE_PREFIX = "wave-";
-function greenReceiptOf(verdictsFile, preWriteSlice, written) {
-  if (written.get("verify_green") !== "true" || preWriteSlice === "none") return { kind: "unguarded" };
-  if (keepsTheWaveArmed(preWriteSlice, written)) return { kind: "unreceipted", slice: preWriteSlice };
-  const newest = verifierRecordsSinceArm(readVerdicts(verdictsFile).entries, preWriteSlice).at(-1);
-  if (newest === void 0) return { kind: "unreceipted", slice: preWriteSlice };
-  if (newest.verdict === "pass" && newest.verdict_shape === "valid") return { kind: "receipted" };
-  return { kind: "refused", reason: refusalReason(preWriteSlice, newest) };
-}
-function keepsTheWaveArmed(preWriteSlice, written) {
-  return preWriteSlice.startsWith(WAVE_SLICE_PREFIX) && written.get("active_slice") === preWriteSlice;
-}
-function refusalReason(slice, record) {
-  const verdict = record.verdict_shape === "malformed" ? "malformed" : record.verdict;
-  return `the newest verifier record of slice ${slice} is ${verdict}: ${JSON.stringify(record)}`;
-}
-
 // core/src/verdict/wave.ts
 import path5 from "node:path";
 var SLICE_RISKS = ["low", "high"];
@@ -1573,6 +1560,48 @@ function tokenOf(fields) {
   if (typeof session !== "string" || typeof time !== "string") return void 0;
   if (!Array.isArray(slices) || !slices.every((slice) => typeof slice === "string")) return void 0;
   return { kind, wave, token, slices, session, time };
+}
+
+// core/src/verdict/receipt.ts
+var WAVE_SLICE_PREFIX = "wave-";
+function greenReceiptOf(files, preWriteSlice, written) {
+  if (written.get("verify_green") !== "true" || preWriteSlice === "none") return { kind: "unguarded" };
+  const named = written.get("green_slice");
+  if (named !== void 0 && namesAWindowOf(preWriteSlice, written)) return namedWindowReceipt(files, preWriteSlice, named);
+  if (keepsTheWaveArmed(preWriteSlice, written)) return { kind: "unreceipted", slice: preWriteSlice };
+  const newest = verifierRecordsSinceArm(readVerdicts(files.verdictsFile).entries, preWriteSlice).at(-1);
+  if (newest === void 0) return { kind: "unreceipted", slice: preWriteSlice };
+  if (newest.verdict === "pass" && newest.verdict_shape === "valid") return { kind: "receipted" };
+  return { kind: "refused", reason: refusalReason(preWriteSlice, newest) };
+}
+function namedWindowReceipt(files, wave, slice) {
+  const started = newestWaveNamed(readWaveLog(files.wavesFile), wave);
+  if (started === void 0 || !started.slices.some((member) => member.slice === slice)) {
+    return { kind: "refused", reason: `slice ${slice} is not in the started ${wave}` };
+  }
+  const arming = newestArmingOf(readVerdicts(files.verdictsFile).entries, slice);
+  const newest = arming.filter(isVerifierRecord).at(-1);
+  if (newest === void 0) {
+    return { kind: "refused", reason: `slice ${slice} has no verifier record since its arm` };
+  }
+  if (newest.verdict !== "pass" || newest.verdict_shape !== "valid") {
+    return { kind: "refused", reason: refusalReason(slice, newest) };
+  }
+  if (arming.slice(arming.indexOf(newest) + 1).some((entry) => isMarkerOf(RISK_HIGH_DISCARDED, entry))) {
+    return { kind: "refused", reason: `slice ${slice} carries a ${RISK_HIGH_DISCARDED} marker newer than its pass and is verified solo` };
+  }
+  return { kind: "receipted" };
+}
+function namesAWindowOf(preWriteSlice, written) {
+  const slice = written.get("active_slice") ?? preWriteSlice;
+  return preWriteSlice.startsWith(WAVE_SLICE_PREFIX) && slice === preWriteSlice;
+}
+function keepsTheWaveArmed(preWriteSlice, written) {
+  return preWriteSlice.startsWith(WAVE_SLICE_PREFIX) && written.get("active_slice") === preWriteSlice;
+}
+function refusalReason(slice, record) {
+  const verdict = record.verdict_shape === "malformed" ? "malformed" : record.verdict;
+  return `the newest verifier record of slice ${slice} is ${verdict}: ${JSON.stringify(record)}`;
 }
 
 // core/src/verdict/report.ts
@@ -1684,7 +1713,7 @@ function unreceiptedGreensText({ unreceipted_greens: greens }) {
 }
 
 // core/src/state/known-keys.ts
-var GATE_STATE_KEYS = ["mode", "active_slice", "verify_green"];
+var GATE_STATE_KEYS = ["mode", "active_slice", "verify_green", "green_slice"];
 var SETTABLE_STATE_KEYS = [...GATE_STATE_KEYS, "repo_path", "auto", "auto_change", "auto_wait", "roadmap"];
 var KEYS_CLOSE_REMOVES = [...GATE_STATE_KEYS, "auto_wait"];
 var ENUM_VALUES = {
@@ -2365,7 +2394,7 @@ function runSet(sessionId, pairs) {
   });
 }
 function receiptOfGreen(stateFile, verb, preWriteSlice, written) {
-  const receipt = greenReceiptOf(verdictsFileFor(stateFile), preWriteSlice, written);
+  const receipt = greenReceiptOf({ verdictsFile: verdictsFileFor(stateFile), wavesFile: wavesFileFor(stateFile) }, preWriteSlice, written);
   if (receipt.kind === "refused") throw new RefusedError(verb, receipt.reason);
   return receipt;
 }
