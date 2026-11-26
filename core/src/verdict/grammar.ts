@@ -37,3 +37,41 @@ export function readVerdictShape(text: string): VerdictReading {
   const { verdict } = parseAgentVerdict(text);
   return verdict === undefined ? { verdict: "none", verdict_shape: "malformed" } : { verdict, verdict_shape: "valid" };
 }
+
+export interface SliceRisk {
+  level: "high";
+  reason: string;
+}
+
+export type SliceBlockReading =
+  | { slice: string; verdict: VerdictValue; verdict_shape: "valid"; risk?: SliceRisk }
+  | { slice?: string; verdict: "none"; verdict_shape: "malformed" };
+
+const SLICE_LINE = /^\s*slice\s*:\s*(.*?)\s*$/i;
+const SLICE_ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
+const RISK_HIGH_LINE = /^\s*risk\s*:\s*high(?:\s+(.*?))?\s*$/i;
+
+export function readSliceBlocks(text: string): SliceBlockReading[] {
+  const readings: SliceBlockReading[] = [];
+  let block: string[] | undefined;
+  for (const line of text.split(/\r?\n/)) {
+    if (SLICE_LINE.test(line)) {
+      if (block !== undefined) readings.push(readSliceBlock(block));
+      block = [line];
+      continue;
+    }
+    block?.push(line);
+  }
+  if (block !== undefined) readings.push(readSliceBlock(block));
+  return readings;
+}
+
+function readSliceBlock(lines: string[]): SliceBlockReading {
+  const id = lines[0]!.match(SLICE_LINE)![1]!;
+  if (!SLICE_ID.test(id)) return { verdict: "none", verdict_shape: "malformed" };
+  const reading = readVerdictShape(lines.join("\n"));
+  if (reading.verdict_shape === "malformed") return { slice: id, ...reading };
+  const riskMatch = lines.map((line) => line.match(RISK_HIGH_LINE)).find((match) => match !== null);
+  if (riskMatch === undefined) return { slice: id, ...reading };
+  return { slice: id, ...reading, risk: { level: "high", reason: riskMatch[1] ?? "" } };
+}
