@@ -51,6 +51,26 @@ describe("the verdict record writer", () => {
     assert.deepEqual(attempts, [1, 2, 1, 2, 1]);
   });
 
+  test("inside an armed wave a mark or a verifier record of slice A never counts against slice B", () => {
+    for (const slice of ["A", "B"]) {
+      appendMarker(verdictsFile, { kind: "arm", slice, session: "ses-record", change: "alpha", wave: "wave-1" });
+    }
+    appendMarker(verdictsFile, { kind: "empty-result", slice: "A", session: "ses-record", change: "alpha" });
+    appendVerdict(verdictsFile, { ...CAPTURE, slice: "A" });
+    appendVerdict(verdictsFile, { ...CAPTURE, slice: "A" });
+    appendVerdict(verdictsFile, { ...CAPTURE, slice: "B" });
+    const { entries } = readVerdicts(verdictsFile);
+    assert.deepEqual(
+      verifierRecordsSinceArm(entries, "A").map((record) => record.attempt),
+      [1, 2],
+    );
+    assert.deepEqual(
+      verifierRecordsSinceArm(entries, "B").map((record) => record.attempt),
+      [1],
+    );
+    assert.equal(entries.filter((entry) => "kind" in entry && entry.kind === "arm" && entry.wave === "wave-1").length, 2);
+  });
+
   test("a record with a null slice reads back whole and joins no armed slice", () => {
     appendMarker(verdictsFile, { kind: "arm", slice: "2", session: "ses-record", change: "alpha" });
     appendVerdict(verdictsFile, { ...CAPTURE, slice: null });

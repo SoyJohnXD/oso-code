@@ -32,7 +32,10 @@ const WATCH_PARAGRAPH =
 const SCAN_LINES =
   "       oso-state scan comments <ref>\n" + "       oso-state scan abstractions <ref>\n";
 const REPORT_LINE = "       oso-state report [--json]\n";
-const MARK_LINE = "       oso-state --session <id> mark <diagnosed|escalated|empty-result>\n";
+const MARK_LINE =
+  "       oso-state --session <id> mark <diagnosed|escalated|empty-result> [slice]\n" +
+  "       oso-state --session <id> wave start <wave> <slice>=<low|high> [<slice>=<low|high> ...]\n" +
+  "       oso-state --session <id> launch-token <wave> <token> <slice> [<slice> ...]\n";
 const REPORT_PARAGRAPH =
   "\nreport reads this repository's verdict records and prints the armed slice with\n" +
   "its rounds since its arming and since its newest diagnosis, the first-fail\n" +
@@ -40,7 +43,12 @@ const REPORT_PARAGRAPH =
   "and unreceipted greens; --json prints the same fields as one JSON object.\n";
 const MARK_PARAGRAPH =
   "\nmark records a diagnosis, an escalation or an empty applier result against the\n" +
-  "armed slice, and is refused when no slice is armed.\n";
+  "armed slice, and is refused when no slice is armed; inside a started wave it\n" +
+  "takes the id of one of the wave's slices instead.\n" +
+  "\nwave start records a wave's slices with their risk and arms each of them, so its\n" +
+  "rounds are counted per slice. launch-token registers the slices one verifier\n" +
+  "launch covers and is refused for an id outside the wave, a batch of more than 3\n" +
+  "slices or a batch holding a high-risk slice.\n";
 const SCAN_PARAGRAPH =
   "\nscan reads the working directory's own repository, reports every hit on stdout\n" +
   "and exits 0 whether or not it found any. comments flags the inline comments the\n" +

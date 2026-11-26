@@ -42,6 +42,7 @@ export type Marker = Readonly<{
   session: string;
   change: string | null;
   time: string;
+  wave?: string;
 }>;
 
 export type VerdictLogEntry = VerdictRecord | Marker;
@@ -82,6 +83,7 @@ export function appendMarker(verdictsFile: string, marker: MarkerCapture): boole
     session: marker.session,
     change: marker.change,
     time: isoTimestamp(),
+    ...(marker.wave === undefined ? {} : { wave: marker.wave }),
   }));
 }
 
@@ -137,7 +139,7 @@ export function armingsOf(entries: readonly VerdictLogEntry[]): Armings {
   return { everyArming, newestArmingOfSlice };
 }
 
-function appendEntry(verdictsFile: string, session: string, entryOf: () => VerdictLogEntry): boolean {
+export function appendEntry(verdictsFile: string, session: string, entryOf: () => object): boolean {
   try {
     const line = `${JSON.stringify(entryOf())}\n`;
     withOwnerOnlyUmask(() => {
@@ -159,10 +161,11 @@ function logEntryOf(line: string): VerdictLogEntry | undefined {
 }
 
 function markerOf(fields: Record<string, unknown>): Marker | undefined {
-  const { slice, session, change, time } = fields;
+  const { slice, session, change, time, wave } = fields;
   const kind = MARKER_KINDS.find((value) => value === fields["kind"]);
   if (kind === undefined || !isText(slice) || !isText(session) || !isTextOrNull(change) || !isText(time)) return undefined;
-  return { kind, slice, session, change, time };
+  if (wave !== undefined && !isText(wave)) return undefined;
+  return { kind, slice, session, change, time, ...(wave === undefined ? {} : { wave }) };
 }
 
 function verdictRecordOf(fields: Record<string, unknown>): VerdictRecord | undefined {
