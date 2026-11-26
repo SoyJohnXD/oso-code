@@ -5455,12 +5455,19 @@ function promptOf(launch) {
 ${APPLIER_PROOF_HEADER}
 ${applierProof}`;
 }
-function packetSection({ slice, worktree, applierProof }) {
+function packetSection({ slice, worktree, sliceStart, criteria, decisionBlock, applierProof }) {
+  const body = [
+    `WORKTREE PATH: ${worktree}`,
+    `SLICE START: ${sliceStart}`,
+    `CRITERIA:
+${criteria}`,
+    `DECISION BLOCK:
+${decisionBlock}`,
+    `${APPLIER_PROOF_HEADER}
+${applierProof}`
+  ].join("\n\n");
   return `=== slice packet: ${slice} ===
-WORKTREE PATH: ${worktree}
-
-${APPLIER_PROOF_HEADER}
-${applierProof}`;
+${body}`;
 }
 var INTERRUPT_BOUND_MS = 1e4;
 async function interruptChild(sessionID, transport) {
@@ -6277,9 +6284,12 @@ function waveTool(host) {
                   properties: {
                     slice: { type: "string", description: "The slice id, unique within the batch." },
                     worktree: { type: "string", description: "Absolute path of the slice's git worktree." },
+                    slice_start: { type: "string", description: "The ref the slice's diff is judged against." },
+                    criteria: { type: "string", description: "The slice's verify criteria, verbatim." },
+                    decision_block: { type: "string", description: "The ledger decisions relevant to the slice, verbatim." },
                     applier_proof: { type: "string", description: "The slice's applier proof, scan, and decisions_used blocks, verbatim and alone." }
                   },
-                  required: ["slice", "worktree", "applier_proof"]
+                  required: ["slice", "worktree", "slice_start", "criteria", "decision_block", "applier_proof"]
                 }
               }
             },
@@ -6365,7 +6375,7 @@ function parseBatchLaunch(record, index) {
 }
 function parsePacket(packet, childIndex, index) {
   const record = typeof packet === "object" && packet !== null ? packet : {};
-  const { slice, worktree, applier_proof: applierProof } = record;
+  const { slice, worktree, slice_start: sliceStart, criteria, decision_block: decisionBlock, applier_proof: applierProof } = record;
   const where = `oso_wave child ${childIndex} packet ${index}`;
   if (typeof slice !== "string" || !SLICE_ID2.test(slice)) {
     throw new Error(`${where} needs a slice id matching ${SLICE_ID2}, not ${JSON.stringify(slice)}`);
@@ -6373,10 +6383,19 @@ function parsePacket(packet, childIndex, index) {
   if (typeof worktree !== "string" || worktree === "") {
     throw new Error(`${where} needs a worktree path, not ${JSON.stringify(worktree)}`);
   }
+  if (typeof sliceStart !== "string" || sliceStart === "") {
+    throw new Error(`${where} needs slice_start, not ${JSON.stringify(sliceStart)}`);
+  }
+  if (typeof criteria !== "string" || criteria === "") {
+    throw new Error(`${where} needs criteria, not ${JSON.stringify(criteria)}`);
+  }
+  if (typeof decisionBlock !== "string" || decisionBlock === "") {
+    throw new Error(`${where} needs decision_block, not ${JSON.stringify(decisionBlock)}`);
+  }
   if (typeof applierProof !== "string" || applierProof === "") {
     throw new Error(`${where} needs applier_proof as the applier's three report blocks, not ${JSON.stringify(applierProof)}`);
   }
-  return { slice, worktree, applierProof };
+  return { slice, worktree, sliceStart, criteria, decisionBlock, applierProof };
 }
 function isWaveAgent(value) {
   return value === "applier" || value === "verifier";
@@ -6395,15 +6414,18 @@ function renderChild(result) {
   if (result.outcome === "blocked") {
     return `=== ${result.worktree} (${result.agent}) \u2014 blocked: ${result.reason} ===`;
   }
-  return `=== ${result.worktree} (${result.agent}) \u2014 ${verdictSummary(result.verdict)} ===
+  return `=== ${result.worktree} (${result.agent}) \u2014 ${verdictSummary(result)} ===
 ${result.raw}`;
 }
-function verdictSummary(parsed) {
+function verdictSummary({ verdict: parsed, raw }) {
   const lines = [];
   if (parsed.status !== void 0) {
     lines.push(`status: ${parsed.status}`);
   }
-  if (parsed.verdict !== void 0) {
+  const blocks = readSliceBlocks(raw);
+  if (blocks.length > 1) {
+    lines.push(`verdict: ${blocks.map((block) => `${block.slice ?? "unnamed"} ${block.verdict}`).join(", ")}`);
+  } else if (parsed.verdict !== void 0) {
     lines.push(`verdict: ${parsed.verdict}`);
   }
   return lines.length === 0 ? "no verdict line" : lines.join(", ");
